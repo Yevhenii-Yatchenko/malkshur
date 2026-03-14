@@ -1,0 +1,5 @@
+# Simulation-only overrides for ArduCopter
+# Disables pre-arm checks that block arming in SITL
+
+ARMING_CHECK 0         # Disable pre-arm checks (simulation only)
+ARMING_REQUIRE 1       # Still require arming command

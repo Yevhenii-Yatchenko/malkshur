@@ -61,7 +61,7 @@ services:
       - ARDUPILOT_FRAME=gazebo-iris
       - ARDUPILOT_HEADLESS=${ARDUPILOT_HEADLESS:-0}
       - ARDUPILOT_LOCATION=OSRF0
-      - ARDUPILOT_PARAMS=${ARDUPILOT_PARAMS:-}
+      - ARDUPILOT_PARAMS=${ARDUPILOT_PARAMS:-/params/sim_copter.parm}
     volumes:
       # Share X11 socket for GUI (MAVProxy map, console)
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
@@ -100,6 +100,8 @@ services:
       # Camera type for sky_anchor
       - DRONE_CAMERA_TYPE=GAZEBO
       - GAZEBO_CAMERA_TOPIC=/gazebo/default/down_cam/cam_link/nadir_camera/image
+      # Auto-arm after 1 second
+      - ARM_IN=1.0
     volumes:
       # Mount DroneProject source (editable without rebuild)
       - ./docker_data/drone_project/src:/drone_project:rw

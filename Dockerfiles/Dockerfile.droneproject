@@ -32,7 +32,7 @@ COPY docker_data/drone_project/requirements.txt /tmp/requirements.txt
 RUN pip3 install --upgrade pip && \
     pip3 install numpy==1.24.4 && \
     pip3 install -r /tmp/requirements.txt && \
-    pip3 install protobuf==3.20.3 Pillow scipy pyudev
+    pip3 install protobuf==3.20.3 Pillow scipy pyudev pyserial
 
 # Install pygazebo from source (classic Gazebo transport)
 RUN git clone https://github.com/jpieper/pygazebo.git /tmp/pygazebo && \
