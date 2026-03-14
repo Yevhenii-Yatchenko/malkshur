@@ -1,0 +1,46 @@
+ДЛЯ АВТОЗАПУСКА СКРИПТА
+1. sudo nano /etc/systemd/system/start_script.service
+2.
+[Unit]
+Description=Python script autostart
+
+[Service]
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/python3 /home/jetson2/Documents/DroneProject-develop/xbee_process_com.py
+WorkingDirectory=/home/jetson2/Documents/DroneProject-develop
+Restart=always
+User=jetson2
+
+[Install]
+WantedBy=multi-user.target
+
+3. sudo systemctl enable start_script.service
+4. sudo systemctl start start_script.service
+
+Для перезапуска:
+1. sudo systemctl daemon-reload
+2. sudo systemctl restart start_script.service
+
+ДЛЯ ROOT ПОРТОВ
+1. sudo nano /etc/systemd/system/chmod_usb.service
+2.
+[Unit]
+Description=Set permissions for /dev/ttyUSB*
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'chmod 777 /dev/ttyUSB0 && chmod 777 /dev/ttyUSB1'
+
+[Install]
+WantedBy=multi-user.target
+3. sudo systemctl enable chmod_usb.service
+4. sudo systemctl start chmod_usb.service
+
+Для проверки: ls -l /dev/ttyUSB*
+crwxrwxrwx - это root
+
+ДЛЯ АВТО ПОРТОВ
+1. Узнать VID:PID
+В консоль: lsusb
+2. sudo apt install python3-pyudev
+3. Обновить код

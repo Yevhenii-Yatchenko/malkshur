@@ -1,0 +1,116 @@
+services:
+  gazebo:
+    build:
+      context: .
+      dockerfile: Dockerfiles/Dockerfile.gazebo
+    image: malkshur-gazebo
+    container_name: malkshur_gazebo
+    stdin_open: true
+    tty: true
+    network_mode: host
+    privileged: true
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      # NVIDIA
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      # Force NVIDIA on hybrid graphics (AMD + NVIDIA laptop)
+      - __NV_PRIME_RENDER_OFFLOAD=1
+      - __GLX_VENDOR_LIBRARY_NAME=nvidia
+      - __VK_LAYER_NV_optimus=NVIDIA_only
+      # Gazebo multi-threading
+      - GAZEBO_NUM_THREADS=8
+    volumes:
+      # Share X11 socket for GUI (Gazebo)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Custom Gazebo models and worlds
+      - ./docker_data/gazebo/models:/root/gazebo_models:ro
+      - ./docker_data/gazebo/worlds:/root/gazebo_worlds:ro
+      # Persist bash history
+      - ./docker_data/gazebo/.bash_history:/root/.bash_history
+      # Persist Gazebo cache (faster startup after first run)
+      - ./docker_data/gazebo/.gazebo:/root/.gazebo
+      # Custom entrypoint
+      - ./docker_data/gazebo/entrypoint-gazebo.sh:/entrypoint.sh:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: ["/entrypoint.sh"]
+    command: ["gazebo"]
+
+  ardupilot:
+    build:
+      context: .
+      dockerfile: Dockerfiles/Dockerfile.ardupilot
+    image: malkshur-ardupilot
+    container_name: malkshur_ardupilot
+    stdin_open: true
+    tty: true
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      # ArduPilot settings
+      - ARDUPILOT_VEHICLE=ArduCopter
+      - ARDUPILOT_FRAME=gazebo-iris
+      - ARDUPILOT_HEADLESS=${ARDUPILOT_HEADLESS:-0}
+      - ARDUPILOT_LOCATION=OSRF0
+      - ARDUPILOT_PARAMS=${ARDUPILOT_PARAMS:-}
+    volumes:
+      # Share X11 socket for GUI (MAVProxy map, console)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Custom entrypoint
+      - ./docker_data/ardupilot_sitl/entrypoint-ardupilot.sh:/entrypoint.sh:ro
+      # Persist bash history
+      - ./docker_data/ardupilot_sitl/.bash_history:/root/.bash_history
+      # ArduPilot parameter files
+      - ./docker_data/ardupilot_sitl/params:/params:ro
+      # Persist SITL state (eeprom, logs)
+      - ./docker_data/ardupilot_sitl/sitl_data:/ardupilot/ArduCopter/sitl_data
+    entrypoint: ["/entrypoint.sh"]
+    depends_on:
+      - gazebo
+
+  drone-project:
+    build:
+      context: .
+      dockerfile: Dockerfiles/Dockerfile.droneproject
+    image: malkshur-droneproject
+    container_name: malkshur_droneproject
+    stdin_open: true
+    tty: true
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - PYTHONUNBUFFERED=1
+      # Gazebo simulation mode
+      - USE_GAZEBO=true
+      - GAZEBO_MASTER_URI=http://localhost:11345
+      - GAZEBO_HOST=localhost
+      # MAVLink connection to ArduPilot SITL
+      - MAVLINK_HOST=localhost
+      - MAVLINK_PORT=5763
+      # Camera type for sky_anchor
+      - DRONE_CAMERA_TYPE=GAZEBO
+      - GAZEBO_CAMERA_TOPIC=/gazebo/default/down_cam/cam_link/nadir_camera/image
+    volumes:
+      # Mount DroneProject source (editable without rebuild)
+      - ./docker_data/drone_project/src:/drone_project:rw
+      # Persist bash history
+      - ./docker_data/drone_project/.bash_history:/root/.bash_history
+      # Persist logs
+      - ./docker_data/drone_project/logs:/drone_project/logs
+      # Custom entrypoint
+      - ./docker_data/drone_project/entrypoint-droneproject.sh:/entrypoint.sh:ro
+    entrypoint: ["/entrypoint.sh"]
+    command: ["bash"]
+    depends_on:
+      - gazebo
+      - ardupilot

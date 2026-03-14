@@ -1,0 +1,25 @@
+.claude
+
+# Gazebo cache
+docker_data/gazebo/.gazebo/
+
+# SITL persisted state
+docker_data/ardupilot_sitl/sitl_data/
+
+# Logs
+docker_data/drone_project/logs/
+
+# Bash history files
+docker_data/**/.bash_history
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+
+# ML model weights (large binaries)
+*.onnx
+*.pt
+*.engine

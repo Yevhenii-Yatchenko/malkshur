@@ -1,0 +1,2003 @@
+// ORB-optimized ground textures
+// Each material represents a unique tile with features specifically designed for ORB feature detection
+
+material ORBOptimized/Tile000
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_000.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile001
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_001.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile002
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_002.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile003
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_003.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile004
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_004.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile005
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_005.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile006
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_006.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile007
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_007.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile008
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_008.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile009
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_009.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile010
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_010.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile011
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_011.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile012
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_012.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile013
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_013.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile014
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_014.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile015
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_015.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile016
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_016.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile017
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_017.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile018
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_018.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile019
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_019.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile020
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_020.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile021
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_021.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile022
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_022.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile023
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_023.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile024
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_024.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile025
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_025.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile026
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_026.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile027
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_027.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile028
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_028.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile029
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_029.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile030
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_030.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile031
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_031.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile032
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_032.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile033
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_033.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile034
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_034.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile035
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_035.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile036
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_036.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile037
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_037.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile038
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_038.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile039
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_039.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile040
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_040.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile041
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_041.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile042
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_042.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile043
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_043.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile044
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_044.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile045
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_045.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile046
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_046.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile047
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_047.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile048
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_048.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile049
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_049.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile050
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_050.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile051
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_051.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile052
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_052.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile053
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_053.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile054
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_054.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile055
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_055.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile056
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_056.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile057
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_057.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile058
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_058.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile059
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_059.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile060
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_060.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile061
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_061.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile062
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_062.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile063
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_063.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile064
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_064.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile065
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_065.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile066
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_066.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile067
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_067.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile068
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_068.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile069
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_069.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile070
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_070.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile071
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_071.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile072
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_072.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile073
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_073.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile074
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_074.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile075
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_075.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile076
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_076.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile077
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_077.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile078
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_078.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile079
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_079.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile080
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_080.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile081
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_081.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile082
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_082.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile083
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_083.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile084
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_084.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile085
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_085.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile086
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_086.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile087
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_087.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile088
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_088.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile089
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_089.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile090
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_090.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile091
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_091.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile092
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_092.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile093
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_093.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile094
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_094.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile095
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_095.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile096
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_096.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile097
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_097.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile098
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_098.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+
+material ORBOptimized/Tile099
+{
+  technique
+  {
+    pass
+    {
+      ambient 0.95 0.95 0.95 1.0
+      diffuse 1.0 1.0 1.0 1.0
+      specular 0.02 0.02 0.02 1.0 5
+
+      texture_unit
+      {
+        texture orb_tile_099.png
+        filtering anisotropic
+        anisotropy 16
+      }
+    }
+  }
+}
+

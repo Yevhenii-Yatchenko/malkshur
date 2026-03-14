@@ -1,0 +1,45 @@
+services:
+  drone-controller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drone_controller
+    hostname: drone-docker
+    volumes:
+      # Mount the project directory
+      - .:/drone_project:rw
+      # Share host's time
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      # SSH access
+      - "2222:22"
+      # Telnet debugging
+      - "2323:2323"
+    environment:
+      # Enable Gazebo simulation mode
+      - USE_GAZEBO=true
+      # Gazebo connection (host.docker.internal works on Docker Desktop)
+      - GAZEBO_MASTER_URI=http://host.docker.internal:11345
+      - GAZEBO_MODEL_DATABASE_URI=http://models.gazebosim.org
+      # MAVLink connection to ArduPilot SITL
+      - MAVLINK_HOST=host.docker.internal
+      - MAVLINK_PORT=5763
+      # Camera type for sky_anchor
+      - DRONE_CAMERA_TYPE=GAZEBO
+      # Logging
+      - PYTHONUNBUFFERED=1
+    networks:
+      - drone_network
+    # Use host network mode for better connectivity to host services
+    # Uncomment if host.docker.internal doesn't work
+    # network_mode: "host"
+    extra_hosts:
+      # For Linux hosts where host.docker.internal doesn't work
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
+    privileged: true  # Needed for some device access
+
+networks:
+  drone_network:
+    driver: bridge

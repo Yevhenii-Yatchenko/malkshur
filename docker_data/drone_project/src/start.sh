@@ -1,0 +1,1 @@
+USE_GAZEBO=true GAZEBO_MASTER_URI=http://host.docker.internal:11345  GAZEBO_MODEL_DATABASE_URI=http://models.gazebosim.org MAVLINK_HOST=host.docker.internal MAVLINK_PORT=5763 ARM_IN=1.0 python3.10 xbee_process_com.py

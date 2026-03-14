@@ -1,0 +1,35 @@
+1. Install Python 3.8 https://www.itsupportwale.com/blog/how-to-upgrade-to-python-3-8-on-ubuntu-18-04-lts/
+
+# and install -dev
+sudo apt-get install gcc python3.8-dev
+2. 
+# Upgrade pip to the latest version
+sudo apt install python3-pip
+pip3 install --upgrade pip
+
+# Install the required packages
+pip install -r requirements.txt
+3. Install Open-CV
+pip3 install opencv-python 
+4.  Prepared for Image recognition
+
+# manual update PyYAML
+sudo -H pip3 install --ignore-installed PyYAML
+
+https://github.com/ultralytics/pip
+
+5. Prepared for main module:
+
+# install serial
+sudo pip3 install -U serial
+
+# install pymavlink
+sudo pip3 install -U pymavlink
+
+# install pyserial
+sudo pip3 install -U pyserial
+
+# install nanocamera
+sudo pip3 install -U nanocamera
+
+https://update.code.visualstudio.com/1.75.1/linux-deb-arm64/stable

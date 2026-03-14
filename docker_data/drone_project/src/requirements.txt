@@ -1,0 +1,58 @@
+# DroneProject - Comprehensive Python Dependencies
+# MAVLink-based drone controller with computer vision stabilization
+
+# Core Dependencies (already specified in sky_anchor/requirements.txt)
+pillow==10.2.0
+python-dotenv==1.0.1
+pymavlink==2.4.43
+
+# Computer Vision & Image Processing
+opencv-python>=4.5.0,<5.0.0      # Computer vision, ORB features, camera processing
+numpy>=1.20.0,<2.0.0              # Mathematical operations, array processing
+
+# Communication Libraries
+digi-xbee>=1.4.0,<2.0.0           # XBee DigiMesh radio communication
+
+# Hardware Interface
+pyudev>=0.22.0,<1.0.0             # USB device detection and management
+
+# Testing Framework
+pytest>=6.0.0,<8.0.0              # Unit and integration testing
+pytest-cov>=2.0.0,<5.0.0          # Test coverage reporting (optional)
+
+# Development Tools (optional)
+matplotlib>=3.0.0,<4.0.0          # Plotting for PID tuning and analysis
+black>=22.0.0                     # Code formatting (optional)
+flake8>=4.0.0                     # Code linting (optional)
+
+# Platform-Specific Dependencies (install separately)
+# 
+# For NVIDIA Jetson platforms:
+# - Jetson.GPIO (install via: pip install Jetson.GPIO)
+# - jetson.utils (included with JetPack SDK)
+# 
+# For Raspberry Pi platforms:
+# - RPi.GPIO (install via: pip install RPi.GPIO)
+#
+# Hardware Requirements:
+# - Flight controller with MAVLink support (ArduPilot/PX4)
+# - XBee DigiMesh radio modules
+# - Ultrasonic distance sensor (HC-SR04 or similar)
+# - USB camera or CSI camera (for Jetson)
+
+# Installation Notes:
+# 
+# 1. Basic installation:
+#    pip install -r requirements.txt
+#
+# 2. For Jetson Nano with CUDA support:
+#    - Install JetPack SDK first
+#    - Use opencv-python compiled with CUDA support
+#    - pip install Jetson.GPIO
+#
+# 3. For development:
+#    pip install -r requirements.txt
+#    pip install pytest-cov black flake8
+#
+# 4. For testing without hardware:
+#    All tests use mocking and don't require physical hardware
