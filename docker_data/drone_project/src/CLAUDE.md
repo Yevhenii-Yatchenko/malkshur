@@ -17,8 +17,9 @@ This is a drone control system that integrates MAVLink-based flight control with
 ### Running the System
 
 ```bash
-# Run the main drone controller (via XBee process communication)
-python3 xbee_process_com.py
+# Run the main drone controller
+# (xbee_process_com.py remains as a backward-compat shim used by the Docker entrypoints)
+python3 run_controller.py
 
 # Run the sky_anchor stabilization system
 python3 sky_anchor/main.py
@@ -173,7 +174,7 @@ The system runs as **two separate processes** communicating via TCP:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ MAIN CONTROLLER PROCESS                                             │
-│ (xbee_process_com.py → DroneController)                             │
+│ (run_controller.py → DroneController)                               │
 │                                                                       │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │ Main Control Loop (50 Hz typical)                           │   │
@@ -429,7 +430,7 @@ The system includes comprehensive data logging capabilities:
 ### How Components Connect
 
 **Startup Sequence**:
-1. `xbee_process_com.py` creates `DroneController` instance
+1. `run_controller.py` creates `DroneController` instance
 2. `DroneController.__init__()` initializes all subsystems:
    - MAVLink connection to flight controller
    - `SkyAnchorClient` (tries to connect to localhost:8888)
