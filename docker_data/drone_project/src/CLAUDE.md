@@ -32,23 +32,9 @@ pip install -r dev-requirements.txt
 
 ### Testing
 
-The project includes a comprehensive test suite covering core functionality:
-
-```bash
-# Run tests using pytest directly
-python3 -m pytest tests/ -v                    # All working tests
-python3 -m pytest tests/unit/ -v               # Unit tests only
-python3 -m pytest tests/integration/ -v        # Integration tests only
-
-# Run with coverage report
-python3 -m pytest --cov=src tests/ -v
-
-# Test categories available
-# - PID controller tests in tests/unit/test_pid_controller.py
-# - XBee communicator tests in tests/unit/test_communicator.py  
-# - Controller method tests in tests/unit/test_controller_methods.py
-# - Integration tests in tests/integration/
-```
+There are no automated tests yet. The `tests/` directory does not exist
+(`pytest.ini` and `dev-requirements.txt` are present, but no test suite has
+been written).
 
 #### Example/Hardware Tests
 
@@ -59,12 +45,6 @@ python3 examples/mavtest.py
 # Test camera functionality
 python3 examples/jetson_camera_test.py
 python3 examples/simple_camera.py
-
-# Test altitude control system (simulation)
-python3 tests/integration/test_altitude_control.py
-
-# Spam Pixhawk for testing communication
-python3 examples/spamPixhawkForGetting.py
 ```
 
 ## Architecture Overview
@@ -85,7 +65,6 @@ Maintains target altitude using sensor feedback:
 Key files:
 - `src/pid_controller.py`: AltitudeController class with cascade PID
 - `src/altitude_config.py`: Tuning parameters and configuration
-- `tests/integration/test_altitude_control.py`: Simulation and testing tool
 
 #### 2. Position Control System (X/Y-axis)
 
@@ -99,7 +78,6 @@ Maintains horizontal position using sky_anchor vision feedback:
 Key files:
 - `src/position_controller.py`: PositionController class with cascade PID
 - `src/position_config.py`: Tuning parameters and configuration
-- `tests/integration/test_position_control.py`: Simulation and testing tool
 
 ### Main Controller (`src/controller.py`)
 
@@ -416,12 +394,8 @@ The altitude control system can be tuned by modifying parameters in `src/altitud
 - **THROTTLE**: PWM ranges and hover estimate
 - **FILTERING**: Sensor noise filtering parameters
 
-To test new gains without flying:
-```bash
-python3 tests/integration/test_altitude_control.py
-```
-
-This will simulate the control system and generate performance plots.
+There is currently no offline simulation tool for testing new gains without
+flying.
 
 ### System Requirements and Notes
 
