@@ -8,8 +8,9 @@ import sys
 import subprocess
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional
 
+from src.domain.types import StabilizerReading
 from src.sky_anchor_client import SkyAnchorClient
 from src.logger import get_logger
 from src import controller_config
@@ -22,7 +23,9 @@ class StabilizerManager:
     Responsibilities:
     - Start stabilizer process
     - Connect to stabilizer server
-    - Poll stabilizer data
+    - Poll stabilizer readings and decide their freshness (Information
+      Expert: the timestamp de-duplication that used to live in
+      DroneController.__updateThrottle is owned here since GRASP Step 4)
     - Manage connection state
     """
 
@@ -51,6 +54,10 @@ class StabilizerManager:
         self.__running = False
         self.__thread: Optional[threading.Thread] = None
         self.__connection_check_interval = 0.1
+
+        # Timestamp of the last reading handed out by poll_new().  Starts at
+        # 0 exactly like the controller's former __last_xy_update field.
+        self.__last_consumed_timestamp = 0
 
     def start_stabilizer_process(self) -> None:
         """Start the sky anchor stabilizer process and connection thread."""
@@ -115,21 +122,31 @@ class StabilizerManager:
         """
         return self.__connected
 
-    def get_stabilizer_data(self) -> Optional[Dict[str, Any]]:
+    def poll_new(self) -> Optional[StabilizerReading]:
         """
-        Get current stabilizer data (dx, dy, angle, confidence).
+        Return the latest stabilizer reading if it has not been consumed yet.
 
-        Returns:
-            Dict with stabilizer data or None if not connected
+        Freshness is decided by the producer-side timestamp: a reading is
+        handed out at most once (the same timestamp is never returned twice).
+        Returns None when not connected, when nothing has arrived yet, or
+        when the latest reading was already consumed by a previous call.
         """
         if not self.__connected:
             return None
 
         try:
-            return self.__client.tick()
+            reading = self.__client.tick()
         except Exception as e:
             self.__logger.error(f"Error getting stabilizer data: {e}")
             return None
+
+        if reading is None:
+            return None
+        if reading.timestamp == self.__last_consumed_timestamp:
+            return None
+
+        self.__last_consumed_timestamp = reading.timestamp
+        return reading
 
     @property
     def is_connected(self) -> bool:

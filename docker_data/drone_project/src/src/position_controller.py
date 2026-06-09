@@ -214,7 +214,8 @@ class PositionController:
                altitude: float,
                current_time: Optional[float] = None,
                target_dx_pixels: Optional[float] = None,
-               target_dy_pixels: Optional[float] = None) -> Dict[str, Any]:
+               target_dy_pixels: Optional[float] = None,
+               navigation: bool = False) -> Dict[str, Any]:
         """
         Update position controller and return PWM commands.
 
@@ -222,11 +223,21 @@ class PositionController:
             dx_pixels: Horizontal drift in pixels from sky_anchor
             dy_pixels: Vertical drift in pixels from sky_anchor
             angle_deg: Angular drift in degrees
-            confidence: Measurement confidence (0-1, match percentage)
+            confidence: Measurement confidence (0-1, match percentage).
+                Informational only since GRASP Step 4 (logged to CSV, kept
+                in last_confidence); it no longer switches modes.
             altitude: Current altitude in meters for compensation
             current_time: Current time in seconds
             target_dx_pixels: Active navigation target X (pixels), if available
             target_dy_pixels: Active navigation target Y (pixels), if available
+            navigation: Explicit navigation flag from the sky_anchor payload
+                (StabilizerReading.navigation).  True switches to navigation
+                mode (position ki/kd zeroed), False switches back to
+                stabilization mode (ki/kd restored from POSITION_PID_X/Y);
+                each switch resets controller state.  Replaces the former
+                magic ``confidence == 1.01`` sentinel (IE-3).  Defaults to
+                False so callers that never navigate keep the historic
+                stabilization-only behavior.
 
         Returns:
             Dictionary containing:
@@ -236,9 +247,9 @@ class PositionController:
                 - valid: Boolean indicating if commands are valid
                 - debug_info: Dictionary with debug information
         """
-        if confidence == 1.01 and self.__mode != 'navigation':
+        if navigation and self.__mode != 'navigation':
             self.__enable_navigation()
-        elif confidence < 1.0 and self.__mode != 'stabilization':
+        elif not navigation and self.__mode != 'stabilization':
             self.__enable_stabilization()
 
         if current_time is None:

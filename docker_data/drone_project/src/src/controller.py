@@ -37,7 +37,6 @@ class DroneController:
     __pitch_base = 1500
     __roll_base = 1500
     __yaw_base = 1500
-    __last_xy_update = 0
 
     __is_up = False
 
@@ -295,76 +294,75 @@ class DroneController:
 
         # Check for intercept mode (target recognition)
         if self.__detection_server.is_running():
-            detection_data = self.__detection_server.get_latest_detection()
-            time_since_detection = self.__detection_server.get_time_since_last_detection()
+            # Data validity (staleness, confidence floor, direction-vector
+            # extraction) is decided by the detection server; the intercept
+            # state machine itself stays here.
+            target = self.__detection_server.get_active_target(
+                timeout_s=INTERCEPT_TIMEOUT_SECONDS,
+                min_confidence=INTERCEPT_CONFIDENCE_THRESHOLD,
+            )
 
-            # Check if we have recent high-confidence detection
-            if detection_data and time_since_detection < INTERCEPT_TIMEOUT_SECONDS:
-                confidence = detection_data.get('confidence', 0.0)
+            if target is not None:
+                # High confidence detection - enter intercept mode
+                if not self.__intercept_mode:
+                    self.logger.warning(f"INTERCEPT MODE ACTIVATED (confidence: {target.confidence:.2%})")
+                    self.__intercept_mode = True
+                    self.__intercept_start_altitude = current_altitude
+                    # Disable stabilization during intercept
+                    # (stabilizer keeps running but we ignore its output)
 
-                if confidence >= INTERCEPT_CONFIDENCE_THRESHOLD:
-                    # High confidence detection - enter intercept mode
-                    if not self.__intercept_mode:
-                        self.logger.warning(f"INTERCEPT MODE ACTIVATED (confidence: {confidence:.2%})")
-                        self.__intercept_mode = True
-                        self.__intercept_start_altitude = current_altitude
-                        # Disable stabilization during intercept
-                        # (stabilizer keeps running but we ignore its output)
+                dir_x = target.dir_x  # Horizontal (-0.5 to 0.5)
+                dir_y = target.dir_y  # Vertical (-0.5 to 0.5)
 
-                    # Extract direction vector
-                    direction_vector = detection_data.get('direction_vector', {})
-                    direction = direction_vector.get('direction', [0, 0, 0])
+                # YAW control (centering horizontally)
+                if abs(dir_x) > INTERCEPT_DEADBAND_X:
+                    # Positive dir_x = target is right, need to yaw right
+                    yaw_correction = int(dir_x * INTERCEPT_YAW_GAIN)
+                    self.__yaw_base = PWM_NEUTRAL + yaw_correction
+                else:
+                    self.__yaw_base = PWM_NEUTRAL  # Centered
 
-                    dir_x = direction[0] if len(direction) > 0 else 0.0  # Horizontal (-0.5 to 0.5)
-                    dir_y = direction[1] if len(direction) > 1 else 0.0  # Vertical (-0.5 to 0.5)
+                # ALTITUDE control (centering vertically)
+                if abs(dir_y) > INTERCEPT_DEADBAND_Y:
+                    # Positive dir_y = target is above, need to climb
+                    altitude_correction = dir_y * INTERCEPT_ALTITUDE_STEP
+                    self.__target_altitude += altitude_correction
+                    self.logger.debug(f"Altitude adjustment: {altitude_correction:+.2f}m -> {self.__target_altitude:.2f}m")
 
-                    # YAW control (centering horizontally)
-                    if abs(dir_x) > INTERCEPT_DEADBAND_X:
-                        # Positive dir_x = target is right, need to yaw right
-                        yaw_correction = int(dir_x * INTERCEPT_YAW_GAIN)
-                        self.__yaw_base = PWM_NEUTRAL + yaw_correction
-                    else:
-                        self.__yaw_base = PWM_NEUTRAL  # Centered
+                # PITCH control (move forward toward target)
+                self.__pitch_base = PWM_NEUTRAL + INTERCEPT_PITCH_OFFSET
 
-                    # ALTITUDE control (centering vertically)
-                    if abs(dir_y) > INTERCEPT_DEADBAND_Y:
-                        # Positive dir_y = target is above, need to climb
-                        altitude_correction = dir_y * INTERCEPT_ALTITUDE_STEP
-                        self.__target_altitude += altitude_correction
-                        self.logger.debug(f"Altitude adjustment: {altitude_correction:+.2f}m -> {self.__target_altitude:.2f}m")
+                # ROLL neutral (no lateral movement)
+                self.__roll_base = INTERCEPT_ROLL_NEUTRAL
 
-                    # PITCH control (move forward toward target)
-                    self.__pitch_base = PWM_NEUTRAL + INTERCEPT_PITCH_OFFSET
+                self.logger.debug(
+                    f"Intercept: conf={target.confidence:.2%}, dir_x={dir_x:+.3f}, dir_y={dir_y:+.3f}, "
+                    f"yaw={self.__yaw_base}, pitch={self.__pitch_base}"
+                )
 
-                    # ROLL neutral (no lateral movement)
-                    self.__roll_base = INTERCEPT_ROLL_NEUTRAL
+                # Skip stabilization logic below
+                # Continue to altitude control at the end
+                if current_altitude is None:
+                    self.logger.error("No valid altitude reading! Maintaining current throttle.")
+                    self.__set_rc_channel_pwm()
+                    return
 
-                    self.logger.debug(
-                        f"Intercept: conf={confidence:.2%}, dir_x={dir_x:+.3f}, dir_y={dir_y:+.3f}, "
-                        f"yaw={self.__yaw_base}, pitch={self.__pitch_base}"
+                try:
+                    new_throttle = self.__altitude_controller.update(
+                        target_altitude=self.__target_altitude,
+                        current_altitude=current_altitude
                     )
+                    self.__set_throttle_base(new_throttle)
+                    self.__set_rc_channel_pwm()
+                except Exception as e:
+                    self.logger.error(f"Error in altitude control: {e}")
 
-                    # Skip stabilization logic below
-                    # Continue to altitude control at the end
-                    if current_altitude is None:
-                        self.logger.error("No valid altitude reading! Maintaining current throttle.")
-                        self.__set_rc_channel_pwm()
-                        return
-
-                    try:
-                        new_throttle = self.__altitude_controller.update(
-                            target_altitude=self.__target_altitude,
-                            current_altitude=current_altitude
-                        )
-                        self.__set_throttle_base(new_throttle)
-                        self.__set_rc_channel_pwm()
-                    except Exception as e:
-                        self.logger.error(f"Error in altitude control: {e}")
-
-                    return  # Exit early, skip stabilization
+                return  # Exit early, skip stabilization
 
             # No recent detection or low confidence
-            if self.__intercept_mode and time_since_detection >= INTERCEPT_TIMEOUT_SECONDS:
+            if (self.__intercept_mode
+                    and self.__detection_server.get_time_since_last_detection()
+                    >= INTERCEPT_TIMEOUT_SECONDS):
                 self.logger.warning(
                     f"INTERCEPT MODE DEACTIVATED (no detection for {INTERCEPT_TIMEOUT_SECONDS}s)"
                 )
@@ -384,30 +382,24 @@ class DroneController:
 
         # Normal stabilization mode (if not intercepting)
         if self.__stabilizer.is_connected and not self.__intercept_mode:
-            data = self.__stabilizer.get_stabilizer_data()
-            if data:
-                timestamp = data.get('timestamp', self.__last_xy_update)
-                if self.__last_xy_update != timestamp:
-                    dx = data.get('dx')
-                    dy = data.get('dy')
-                    matches_percent = data.get('matches_percent')
-                    target_dx = data.get('target_dx_pixels')
-                    target_dy = data.get('target_dy_pixels')
+            # poll_new() returns each reading at most once (timestamp
+            # de-duplication is owned by the StabilizerManager).
+            reading = self.__stabilizer.poll_new()
+            if reading:
+                pid_output = self.__position_controller.update(
+                    dx_pixels=reading.dx,
+                    dy_pixels=reading.dy,
+                    angle_deg=0,
+                    confidence=reading.confidence,
+                    altitude=current_altitude,
+                    target_dx_pixels=reading.target_dx_pixels,
+                    target_dy_pixels=reading.target_dy_pixels,
+                    navigation=reading.navigation,
+                )
 
-                    pid_output = self.__position_controller.update(
-                        dx_pixels=dx,
-                        dy_pixels=dy,
-                        angle_deg=0,
-                        confidence=matches_percent / 100.0,
-                        altitude=current_altitude,
-                        target_dx_pixels=target_dx,
-                        target_dy_pixels=target_dy,
-                    )
-
-                    self.__roll_base = pid_output['roll_pwm']
-                    self.__pitch_base = pid_output['pitch_pwm']
-                    self.__yaw_base = pid_output['yaw_pwm']
-                    self.__last_xy_update = timestamp
+                self.__roll_base = pid_output['roll_pwm']
+                self.__pitch_base = pid_output['pitch_pwm']
+                self.__yaw_base = pid_output['yaw_pwm']
         else:
             if current_altitude is not None and abs(current_altitude - self.__target_altitude) < 0.1:
                 self._stabilize([])

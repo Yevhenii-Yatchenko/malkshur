@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 
+from src.domain.types import DetectionReading
 from src.logger import get_logger
 from src.detection_config import (
     DETECTION_SERVER_HOST,
@@ -142,6 +143,40 @@ class DetectionServer:
             if self._last_update_time == 0.0:
                 return float('inf')
             return time.time() - self._last_update_time
+
+    def get_active_target(
+        self, timeout_s: float, min_confidence: float
+    ) -> Optional[DetectionReading]:
+        """
+        Return the current detection as a typed reading if it is actionable.
+
+        Owns the data-validity decisions that previously lived in
+        DroneController.__updateThrottle (GRASP Step 4, IE-1/IE-2): a target
+        is active only if a detection exists, it arrived less than
+        ``timeout_s`` seconds ago, and its confidence is at least
+        ``min_confidence``.  Direction-vector extraction (including the
+        historic defaults for missing fields) happens in
+        DetectionReading.from_payload.
+
+        Args:
+            timeout_s: Maximum age of the latest detection (strictly less
+                than, matching the former ``< INTERCEPT_TIMEOUT_SECONDS``)
+            min_confidence: Inclusive confidence floor (matching the former
+                ``>= INTERCEPT_CONFIDENCE_THRESHOLD``)
+
+        Returns:
+            DetectionReading for an active target, or None
+        """
+        data = self.get_latest_detection()
+        if not data:
+            return None
+        if self.get_time_since_last_detection() >= timeout_s:
+            return None
+
+        reading = DetectionReading.from_payload(data)
+        if reading.confidence < min_confidence:
+            return None
+        return reading
 
     def _log(self, message: str) -> None:
         """Write message to log file with timestamp."""

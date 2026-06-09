@@ -1,6 +1,7 @@
 """Unit tests for PositionController (src/position_controller.py):
-pixels_to_meters, the confidence-sentinel mode state machine in update(),
-and the Step 3 csv_logger constructor injection (LC-1).
+pixels_to_meters, the navigation-flag mode state machine in update()
+(Step 4, IE-3 -- the former confidence-sentinel), and the Step 3
+csv_logger constructor injection (LC-1).
 
 I/O notes: since Step 3 the CSV logger is injected through the constructor's
 ``csv_logger=`` parameter (a NullCSVLogger here -- no mkdir/open under
@@ -121,21 +122,26 @@ def _update(controller, *, confidence, dx=0.0, dy=0.0, angle=0.0, step=0, **kwar
     )
 
 
-class TestConfidenceSentinelStateMachine:
-    """Pin the confidence-sentinel mode state machine at the top of update().
+class TestNavigationFlagStateMachine:
+    """Pin the navigation-flag mode state machine at the top of update().
 
-    Producer/consumer contract (producer side is pinned in
+    Producer/consumer contract since Step 4 (producer side is pinned in
     tests/unit/test_command_modifier.py):
 
     - While navigating, sky_anchor's CommandModifier emits
-      matches_percent=101.0; src/controller.py forwards
-      confidence = matches_percent / 100.0, and 101.0 / 100.0 == 1.01 holds
-      EXACTLY in IEEE-754 doubles.
-    - confidence == 1.01 -> navigation mode: position-PID ki/kd zeroed
+      ``navigation=True`` in the payload (and keeps the historic
+      matches_percent=101.0 placeholder, now informational only).
+      src/sky_anchor_client.py parses the payload into a StabilizerReading
+      and src/controller.py forwards ``navigation=reading.navigation``.
+    - navigation=True  -> navigation mode: position-PID ki/kd zeroed
       (__enable_navigation), controller state reset.
-    - confidence < 1.0   -> stabilization mode: ki/kd restored from the
+    - navigation=False -> stabilization mode: ki/kd restored from the
       POSITION_PID_X/Y config globals (__enable_stabilization), state reset.
-    - 1.0 <= confidence != 1.01 -> NO transition (the mode is sticky).
+    - The flag is authoritative on EVERY call; transitions happen only when
+      the flag disagrees with the current mode (no reset spam within a mode).
+    - confidence is informational only: the deleted ``confidence == 1.01``
+      sentinel must NOT switch modes anymore (no knife-edge float equality
+      left in the mode logic).
 
     The mode flag itself is name-mangled, so these tests assert the observable
     consequences instead: the live gains on the public position_pid_x/y
@@ -158,42 +164,56 @@ class TestConfidenceSentinelStateMachine:
     def test_starts_in_stabilization_with_config_gains(self, controller):
         self._assert_stabilization_gains(controller)
 
-    def test_sentinel_confidence_switches_to_navigation_and_zeroes_ki_kd(
+    def test_navigation_flag_switches_to_navigation_and_zeroes_ki_kd(
         self, controller
     ):
-        _update(controller, confidence=1.01)
+        _update(controller, confidence=1.01, navigation=True)
         self._assert_navigation_gains(controller)
 
     def test_navigation_keeps_kp_and_angle_pid_untouched(self, controller):
         angle_gains = (
             controller.angle_pid.kp, controller.angle_pid.ki, controller.angle_pid.kd,
         )
-        _update(controller, confidence=1.01)
+        _update(controller, confidence=1.01, navigation=True)
         assert controller.position_pid_x.kp == POSITION_PID_X["kp"]
         assert controller.position_pid_y.kp == POSITION_PID_Y["kp"]
         assert (
             controller.angle_pid.kp, controller.angle_pid.ki, controller.angle_pid.kd,
         ) == angle_gains
 
-    def test_confidence_below_one_restores_gains_from_config_globals(self, controller):
-        _update(controller, confidence=1.01, step=0)
+    def test_flag_false_restores_gains_from_config_globals(self, controller):
+        _update(controller, confidence=1.01, navigation=True, step=0)
         self._assert_navigation_gains(controller)
-        _update(controller, confidence=0.99, step=1)
+        _update(controller, confidence=0.99, navigation=False, step=1)
         self._assert_stabilization_gains(controller)
 
-    def test_confidence_exactly_one_is_sticky_in_navigation(self, controller):
-        _update(controller, confidence=1.01, step=0)
-        _update(controller, confidence=1.0, step=1)  # neither == 1.01 nor < 1.0
+    def test_omitted_flag_defaults_to_stabilization(self, controller):
+        """Backward compatibility: callers that never navigate (and never
+        pass the parameter) keep the historic stabilization-only behavior."""
+        _update(controller, confidence=1.01, navigation=True, step=0)
         self._assert_navigation_gains(controller)
+        _update(controller, confidence=0.85, step=1)  # no navigation kwarg
+        self._assert_stabilization_gains(controller)
 
-    @pytest.mark.parametrize("confidence", [1.0, 1.005, 1.0099999999, 1.02, 2.0])
-    def test_near_sentinel_confidence_does_not_enter_navigation(
+    @pytest.mark.parametrize(
+        "confidence", [0.0, 0.85, 1.0, 1.005, 1.0099999999, 1.01, 1.02, 2.0]
+    )
+    def test_confidence_alone_never_enters_navigation(self, controller, confidence):
+        """The sentinel comparison is DELETED: no confidence value -- not
+        even the old exact wire value 101.0 / 100.0 == 1.01 -- may flip the
+        mode while navigation=False."""
+        _update(controller, confidence=confidence, navigation=False)
+        self._assert_stabilization_gains(controller)
+
+    @pytest.mark.parametrize("confidence", [0.0, 0.85, 1.0, 1.01, 2.0])
+    def test_flag_is_authoritative_regardless_of_confidence(
         self, controller, confidence
     ):
-        """The trigger is an exact float equality with 1.01 -- knife-edge by
-        design (quirk pinned, not endorsed). Only the exact wire value
-        101.0 / 100.0 may flip the mode."""
-        _update(controller, confidence=confidence)
+        """The flag alone drives the mode in BOTH directions, decoupled from
+        whatever the (informational) confidence value happens to be."""
+        _update(controller, confidence=confidence, navigation=True, step=0)
+        self._assert_navigation_gains(controller)
+        _update(controller, confidence=confidence, navigation=False, step=1)
         self._assert_stabilization_gains(controller)
 
     def test_mode_switch_resets_velocity_estimate_and_navigation_targets(
@@ -207,19 +227,29 @@ class TestConfidenceSentinelStateMachine:
         assert controller.navigation_target_dx == 42.0
         assert controller.navigation_target_dy == -17.0
         # ...the switching update wipes it via reset() before acting.
-        _update(controller, confidence=1.01, step=2)
+        _update(controller, confidence=1.01, navigation=True, step=2)
         assert controller.estimated_velocity_x == 0.0
         assert controller.estimated_velocity_y == 0.0
         assert controller.navigation_target_dx == 0.0
         assert controller.navigation_target_dy == 0.0
 
+    def test_repeated_flag_does_not_reset_within_a_mode(self, controller):
+        """Only flag/mode DISAGREEMENT switches (and resets); repeating the
+        same flag must not wipe accumulated state on every call."""
+        _update(controller, confidence=1.01, navigation=True, step=0)
+        _update(controller, confidence=1.01, navigation=True, dx=20.0, step=1)
+        _update(controller, confidence=1.01, navigation=True, dx=40.0, step=2)
+        # A reset between steps 1 and 2 would have left the estimate at 0.
+        assert controller.estimated_velocity_x != 0.0
+
     def test_navigation_mode_outputs_are_pure_proportional(self, controller):
         """With ki = kd = 0 the position PIDs become stateless P controllers:
         identical drift inputs must produce identical PWM outputs on every
         call (no integral creep, no derivative kick)."""
-        _update(controller, confidence=1.01, step=0)  # enter navigation
+        _update(controller, confidence=1.01, navigation=True, step=0)
         results = [
-            _update(controller, confidence=1.01, dx=-20.0, dy=10.0, step=step)
+            _update(controller, confidence=1.01, navigation=True,
+                    dx=-20.0, dy=10.0, step=step)
             for step in (1, 2, 3)
         ]
         # COORDINATE_SYSTEM inverts both axes: dx=-20 -> +20 px (error -20),
@@ -231,8 +261,8 @@ class TestConfidenceSentinelStateMachine:
         assert [result["pitch_pwm"] for result in results] == [expected_pitch] * 3
 
     def test_zero_drift_in_navigation_returns_neutral_pwm(self, controller):
-        _update(controller, confidence=1.01, step=0)
-        result = _update(controller, confidence=1.01, step=1)
+        _update(controller, confidence=1.01, navigation=True, step=0)
+        result = _update(controller, confidence=1.01, navigation=True, step=1)
         assert result["roll_pwm"] == PWM_LIMITS["neutral"]
         assert result["pitch_pwm"] == PWM_LIMITS["neutral"]
         assert result["yaw_pwm"] == PWM_LIMITS["neutral"]

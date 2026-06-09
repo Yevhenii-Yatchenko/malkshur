@@ -185,14 +185,38 @@ class TestPositionControllerCharacterization:
             assert regenerated == pytest.approx(stored[name], rel=1e-9), name
 
     def test_confidence_profile_matches_exactly_including_sentinel(self, golden):
-        """The mode switch compares confidence == 1.01, so the stored values
-        must be BIT-identical to what the replay feeds in -- no approx."""
+        """The replay's sentinel-to-flag TRANSLATION compares
+        confidence == 1.01 (the same comparison the pre-Step 4 production
+        mode switch used), so the stored values must be BIT-identical to
+        what the replay feeds in -- no approx."""
         stored = golden["position_controller"]["inputs"]["confidence"]
         regenerated = [
             gen.position_confidence_profile(step) for step in range(gen.POSITION_STEPS)
         ]
         assert regenerated == stored
         assert 1.01 in stored  # the navigation segment really is recorded
+
+    def test_navigation_translation_reproduces_recorded_mode_sequence(self, golden):
+        """Step 4 replaced the sentinel with an explicit navigation flag;
+        the replay must drive update(navigation=...) through exactly the
+        mode sequence the JSON was recorded under: True precisely on the
+        1.01 navigation segment, False elsewhere."""
+        stored = golden["position_controller"]["inputs"]["confidence"]
+        translated = [
+            gen.position_navigation_profile(step)
+            for step in range(gen.POSITION_STEPS)
+        ]
+        # Translation of the generator profile == translation of the stored
+        # inputs (the JSON and the generator agree)...
+        assert translated == [value == 1.01 for value in stored]
+        # ...and it reproduces the recorded segment layout verbatim.
+        segments = golden["position_controller"]["profile"]["segments"]
+        nav = segments["navigation"]
+        expected = [
+            nav["start"] <= step < nav["stop"] for step in range(gen.POSITION_STEPS)
+        ]
+        assert translated == expected
+        assert any(translated) and not all(translated)
 
     def test_replay_matches_recorded_pwm_sequences(self, golden, position_replay):
         recorded = golden["position_controller"]["outputs"]

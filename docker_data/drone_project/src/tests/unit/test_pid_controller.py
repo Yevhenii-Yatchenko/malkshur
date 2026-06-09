@@ -174,8 +174,9 @@ class TestAltitudeControllerCsvLoggerInjection:
       the test itself stays free of file I/O);
     - csv_logger injected -> NO AltitudeCSVLogger is constructed (no file
       I/O) and update() routes its log write to the injected object
-      (DEBUG['plot_data'] is True in altitude_config, so update() logs on
-      every call).
+      (update() logs on every call iff DEBUG['plot_data'] is truthy; the
+      test patches it True so it is self-sufficient regardless of the
+      altitude_config defaults).
     """
 
     def test_default_still_creates_file_logger_exactly_as_before(self):
@@ -195,16 +196,16 @@ class TestAltitudeControllerCsvLoggerInjection:
         assert controller.csv_logger is fake
 
     def test_update_logs_to_the_injected_logger(self):
-        from src.altitude_config import DEBUG
-
-        # Precondition for the call-count assert below.
-        assert DEBUG.get("plot_data") is True
         fake = mock.Mock(name="injected_csv_logger")
         with mock.patch("src.pid_controller.AltitudeCSVLogger") as csv_cls:
             controller = AltitudeController(csv_logger=fake)
-        throttle = controller.update(
-            target_altitude=5.0, current_altitude=4.5, current_time=0.0
-        )
+        # update() consults DEBUG['plot_data'] at call time (module-level
+        # import shares the dict object with altitude_config); patching it
+        # True makes the call-count assert below self-sufficient.
+        with mock.patch.dict("src.altitude_config.DEBUG", {"plot_data": True}):
+            throttle = controller.update(
+                target_altitude=5.0, current_altitude=4.5, current_time=0.0
+            )
         csv_cls.assert_not_called()
         assert isinstance(throttle, int)
         assert fake.append.call_count == 1

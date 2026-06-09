@@ -152,6 +152,7 @@ src/
 
 **Крок 3. Ін'єкція логерів (перший справжній GRASP-фікс, LC-1).**
 `AltitudeController(..., csv_logger=None)` і `PositionController(..., csv_logger=None)`: якщо None — створюється як зараз (зворотна сумісність), composition root передає явно. Винести function-level імпорти `pid_controller.py:337,345,356` у `__init__`. Тести з кроку 2 позбавляються monkeypatch.
+*Примітка по виконанню:* імпорти винесено на рівень модуля, а не в `__init__` — еквівалентно, бо ніщо не перепризначає атрибути конфіг-модулів (читаються ті самі dict-об'єкти `THROTTLE`/`CONTROL`/`DEBUG`).
 
 **Крок 4. Типізовані дані замість dict'ів (IE-2, IE-3).**
 - `StabilizerReading` dataclass; парсинг у `SkyAnchorClient`; `StabilizerManager.poll_new()` з дедуплікацією.

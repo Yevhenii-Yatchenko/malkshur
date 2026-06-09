@@ -248,22 +248,30 @@ def run_pid_characterization():
 
 
 # ---------------------------------------------------------------------------
-# Profile 3: PositionController.update across the confidence-sentinel modes
+# Profile 3: PositionController.update across the stabilization/navigation modes
 # ---------------------------------------------------------------------------
 # 360 steps of exactly 0.02 s (7.2 s total, the ~50 Hz loop rate).  dx/dy are
 # multi-frequency sinusoids that sweep both signs across the +/-5 px deadband;
 # the angle crosses the +/-1 deg deadband.  The confidence input is piecewise
-# constant and drives the mode state machine in update()
-# (src/position_controller.py):
+# constant; at RECORDING time (pre-Step 4) it drove the mode state machine in
+# update() via the magic sentinel:
 #
 #   confidence == 1.01 -> __enable_navigation():   position ki/kd zeroed, reset
 #   confidence <  1.0  -> __enable_stabilization(): ki/kd restored from
 #                         POSITION_PID_X/Y, reset
 #
-# 1.01 is the navigation sentinel: sky_anchor's CommandModifier emits
-# matches_percent=101.0 while navigating and src/controller.py forwards
+# 1.01 was the navigation sentinel: sky_anchor's CommandModifier emitted
+# matches_percent=101.0 while navigating and src/controller.py forwarded
 # confidence = matches_percent / 100.0 (101.0 / 100.0 == 1.01 exactly in
-# IEEE-754).  The three segments exercise stabilization -> navigation ->
+# IEEE-754).  Step 4 (IE-3) replaced the sentinel with an explicit
+# ``navigation: bool`` parameter; the run function below TRANSLATES the
+# recorded inputs to the new interface (confidence == 1.01 -> navigation=True,
+# else False) while still feeding the recorded confidence values into the
+# (now informational) confidence parameter.  On this profile the translation
+# is exactly mode-equivalent (segments are 0.85 / 1.01 / 0.9 -- no value in
+# the old sticky band [1.0, 1.01) U (1.01, inf)), so the recorded PWM
+# sequences must keep replaying EXACTLY against the unregenerated JSON.
+# The three segments exercise stabilization -> navigation ->
 # back-to-stabilization, including both reset() calls at the switches.
 # Altitude is an input of update() but only flows into CSV logging (it is
 # recorded anyway as part of the driven signature).
@@ -315,11 +323,25 @@ def position_altitude_profile(step):
 
 
 def position_confidence_profile(step):
-    """Piecewise-constant confidence; 1.01 is the exact navigation sentinel."""
+    """Piecewise-constant confidence; 1.01 is the recorded (legacy) navigation
+    sentinel, which the replay translates to ``navigation=True`` -- see
+    position_navigation_profile()."""
     for segment in POSITION_SEGMENTS.values():
         if segment["start"] <= step < segment["stop"]:
             return segment["confidence"]
     raise ValueError(f"step {step} outside the defined profile segments")
+
+
+def position_navigation_profile(step):
+    """Translate the recorded sentinel inputs to the Step 4 interface.
+
+    The JSON predates the explicit ``navigation`` parameter: navigation
+    segments are recorded as the exact IEEE-754 value 1.01.  The equality
+    below is the SAME comparison the deleted production sentinel used, so
+    the replay drives the new interface through exactly the recorded mode
+    sequence (False for 0.85/0.9, True for 1.01).
+    """
+    return position_confidence_profile(step) == 1.01
 
 
 def _position_resolved_config(controller):
@@ -370,6 +392,15 @@ def run_position_characterization():
     the JSON was NOT regenerated for the re-wiring -- outputs are
     logging-independent, see module docstring, including the csv_logger=None
     caveat).
+
+    Step 4+ migration note (navigation flag): update() now takes an explicit
+    ``navigation`` parameter instead of sniffing ``confidence == 1.01``.  The
+    recorded inputs are translated via position_navigation_profile() (the
+    recorded confidence still feeds the confidence parameter, which only
+    flows into last_confidence/CSV).  The JSON was NOT regenerated: the
+    translation reproduces the recorded mode sequence exactly, so this
+    replay still matching the UNCHANGED recorded PWM sequences is the proof
+    that the sentinel removal preserved behavior.
     """
     from src.position_controller import PositionController
 
@@ -386,6 +417,7 @@ def run_position_characterization():
                 confidence=position_confidence_profile(step),
                 altitude=position_altitude_profile(step),
                 current_time=step * POSITION_DT,
+                navigation=position_navigation_profile(step),
             )
             # np.clip makes these numpy ints; convert for JSON.
             outputs["roll_pwm"].append(int(result["roll_pwm"]))

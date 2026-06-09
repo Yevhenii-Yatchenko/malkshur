@@ -11,12 +11,23 @@ from .estimator import ShiftEstimator, get_shift_estimator
 
 @dataclass
 class ShiftCommand:
+    """One drift measurement/command published on the TCP :8888 wire.
+
+    ``navigation`` is the explicit mode flag (GRASP Step 4, IE-3): True only
+    on commands modified by the navigation CommandModifier.  It replaces the
+    magic ``matches_percent == 101.0`` sentinel as the control signal; the
+    101.0 placeholder is still emitted alongside during navigation so the
+    numeric matches_percent stream (CSV logs, plots) stays unchanged, but
+    consumers must key on ``navigation`` only.
+    """
+
     dx: int
     dy: int
     angle_deg: int
     matches_percent: int
     target_dx_pixels: Optional[float] = None
     target_dy_pixels: Optional[float] = None
+    navigation: bool = False
 
     def to_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -24,6 +35,7 @@ class ShiftCommand:
             "dy": self.dy,
             "angle_deg": self.angle_deg,
             "matches_percent": self.matches_percent,
+            "navigation": self.navigation,
         }
         if self.target_dx_pixels is not None:
             payload["target_dx_pixels"] = self.target_dx_pixels

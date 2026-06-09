@@ -120,11 +120,16 @@ class CommandModifier:
             dt
         )
 
+        # navigation=True is the explicit mode signal consumed by
+        # PositionController (Step 4, IE-3).  matches_percent stays at the
+        # historic 101.0 placeholder so the numeric stream (CSV/plots) is
+        # unchanged -- consumers no longer special-case the value.
         return ShiftCommand(
             dx=-vel_x,
             dy=-vel_y,
             angle_deg=0.0,
             matches_percent=101.0,
+            navigation=True,
         )
 
     def modify(self, shift_cmd: ShiftCommand) -> tuple[ShiftCommand, bool]:
