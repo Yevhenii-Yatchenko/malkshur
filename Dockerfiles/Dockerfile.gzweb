@@ -1,0 +1,33 @@
+FROM gazebo:gzserver11
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# GzWeb build deps; focal ships Node 10 — the era GzWeb targets
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    libgazebo11-dev \
+    libjansson-dev \
+    libboost-dev \
+    libtinyxml-dev \
+    imagemagick \
+    nodejs \
+    npm \
+    psmisc \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/osrf/gzweb.git /gzweb
+
+# Local malkshur models so deploy can convert them to web assets;
+# system path covers standard models (sun etc.)
+COPY docker_data/gazebo/models /root/gazebo_models
+ENV GAZEBO_MODEL_PATH=/root/gazebo_models:/usr/share/gazebo-11/models
+
+WORKDIR /gzweb
+# Call deploy.sh directly: npm@6 mangles args passed through `npm run deploy --`
+RUN /bin/bash -c "source /usr/share/gazebo/setup.sh && npm install && ./deploy.sh -m local"
+
+EXPOSE 8080 7681
+CMD ["/bin/bash", "-c", "source /usr/share/gazebo/setup.sh && npm start"]

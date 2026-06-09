@@ -16,15 +16,27 @@ if [ "$1" = "bash" ]; then
 elif [ "$1" = "gazebo" ]; then
     shift
     WORLD=${1:-$WORLD}
+    # Camera sensors need a GL context; without a host X display render
+    # into a virtual framebuffer and skip the GUI.
+    HEADLESS=0
+    if [ -z "$DISPLAY" ]; then
+        echo "No DISPLAY set - starting Xvfb for headless rendering"
+        Xvfb :99 -screen 0 1280x1024x24 &
+        export DISPLAY=:99
+        HEADLESS=1
+        sleep 1
+    fi
     echo "Starting gzserver with world: $WORLD"
     # Launch gzserver (physics engine) as main process
     gzserver --verbose $WORLD &
     GZSERVER_PID=$!
     # Wait briefly for gzserver to initialize
     sleep 3
-    # Launch gzclient (GUI) as separate process
-    echo "Starting gzclient"
-    gzclient &
+    if [ "$HEADLESS" = "0" ]; then
+        # Launch gzclient (GUI) as separate process
+        echo "Starting gzclient"
+        gzclient &
+    fi
     # Wait for gzserver to exit
     wait $GZSERVER_PID
 else

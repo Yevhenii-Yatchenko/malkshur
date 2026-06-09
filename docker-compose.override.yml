@@ -1,0 +1,23 @@
+# Local override for hosts without NVIDIA GPU (AMD/headless).
+# Compose merges this with docker-compose.yml automatically.
+services:
+  gazebo:
+    # No nvidia-container-toolkit on this host
+    runtime: !reset null
+    deploy: !reset null
+    environment:
+      # Render with Mesa llvmpipe instead of NVIDIA
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - __NV_PRIME_RENDER_OFFLOAD=0
+      - __GLX_VENDOR_LIBRARY_NAME=mesa
+
+  # Browser-based viewer (GzWeb): http + websocket on :8080
+  gzweb:
+    build:
+      context: .
+      dockerfile: Dockerfiles/Dockerfile.gzweb
+    image: malkshur-gzweb
+    container_name: malkshur_gzweb
+    network_mode: host
+    depends_on:
+      - gazebo
