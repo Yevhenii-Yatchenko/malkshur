@@ -20,11 +20,24 @@ project root inside the container::
         python3 tests/unit/generate_characterization.py
 
 Determinism notes:
-- Profiles are pure formulas (logistic + sinusoid) -- no randomness.
+- Profiles are pure formulas (logistic / sinusoid / piecewise confidence) --
+  no randomness.
 - ``current_time`` is injected as exact multiples of the step period -- no
   wall-clock dependence.
-- The ``AltitudeCSVLogger`` is patched out identically here and in the replay
-  test, so no log files are written and conditions are identical.
+- The file-writing loggers (``AltitudeCSVLogger``, ``PositionCSVLogger``,
+  ``get_logger``) are patched out, so no log files are written.
+
+Step 3+ migration note (logger injection):
+The recorded outputs are logging-independent: the controllers only ever WRITE
+to their loggers (append/info calls on pure snapshots of already-computed
+state), never read anything back, so logging cannot influence the control
+math.  The construction/patch wiring inside the run functions below MAY
+therefore be re-wired during refactoring (e.g. constructor ``csv_logger``
+injection in Step 3) WITHOUT regenerating this JSON; regenerate only for an
+intentional, reviewed behavior change to the control math.  CAUTION: Step 3's
+planned backward-compat API (``csv_logger=None`` -> the constructor creates a
+real file-writing logger) means the replay must then inject an explicit
+null-object logger -- passing ``None`` would silently re-enable file I/O.
 """
 
 import json
@@ -74,27 +87,84 @@ def altitude_profile(step):
     return logistic + ripple
 
 
+def _pid_snapshot(pid):
+    """Resolved parameters of a constructed PIDController (JSON-safe natives)."""
+    return {
+        "kp": pid.kp,
+        "ki": pid.ki,
+        "kd": pid.kd,
+        "output_min": pid.output_min,
+        "output_max": pid.output_max,
+        "integral_limit": pid.integral_limit,
+    }
+
+
+def _altitude_resolved_config(controller):
+    """Snapshot of the AltitudeController configuration in effect for the run.
+
+    Recorded so a future mismatch can be triaged as "config drifted" vs "math
+    drifted".  Values are read back from the constructed controller (i.e. the
+    constructor-default resolution of src/altitude_config.py), except the last
+    two, which ``update()`` re-reads from altitude_config on EVERY call (the
+    constructor's ``self.throttle_rate_limit`` attribute is not what the rate
+    limiter actually uses).
+    """
+    from src.altitude_config import CONTROL, THROTTLE
+
+    return {
+        "altitude_pid": _pid_snapshot(controller.position_pid),
+        "velocity_pid": _pid_snapshot(controller.velocity_pid),
+        "max_velocity": controller.max_velocity,
+        "max_acceleration": controller.max_acceleration,
+        "throttle_hover": controller.throttle_hover,
+        "throttle_min": controller.throttle_min,
+        "throttle_max": controller.throttle_max,
+        "altitude_filter_alpha": controller.altitude_filter_alpha,
+        "velocity_filter_size": controller.velocity_history.maxlen,
+        # Read from config at update() time, not from the controller instance:
+        "throttle_rate_limit": THROTTLE.get("rate_limit"),
+        "throttle_filter_alpha": CONTROL.get("throttle_filter_alpha"),
+    }
+
+
 def run_altitude_characterization():
     """Drive a default AltitudeController over the takeoff profile.
 
-    Returns the full list of throttle outputs (ints).  The CSV logger is
-    patched out so nothing is written under logs/ -- this patch is part of
-    the recorded conditions and must stay identical in the replay test
-    (it does: the test calls this very function).
+    Returns a dict with:
+    - ``throttle_int``:   the int throttle sequence as returned by update()
+    - ``throttle_float``: the pre-truncation float throttle per step.
+      ``update()`` assigns the post-limit/post-filter float to
+      ``controller.last_throttle`` immediately before ``return int(throttle)``
+      (and that float seeds the next step's rate limiter/filter), so reading
+      ``last_throttle`` after each call captures the exact pre-int value.
+    - ``resolved_config``: see _altitude_resolved_config().
+
+    The CSV logger is patched out so nothing is written under logs/.  This
+    wiring MAY be re-wired during refactoring (e.g. Step 3 csv_logger
+    injection) without regenerating the JSON -- outputs are
+    logging-independent (see module docstring, including the csv_logger=None
+    caveat).
     """
     from src.pid_controller import AltitudeController
 
     with mock.patch("src.pid_controller.AltitudeCSVLogger"):
         controller = AltitudeController()
-        outputs = []
+        resolved_config = _altitude_resolved_config(controller)
+        throttle_int = []
+        throttle_float = []
         for step in range(ALTITUDE_STEPS):
             throttle = controller.update(
                 target_altitude=ALTITUDE_TARGET,
                 current_altitude=altitude_profile(step),
                 current_time=step * ALTITUDE_DT,
             )
-            outputs.append(int(throttle))
-    return outputs
+            throttle_int.append(int(throttle))
+            throttle_float.append(float(controller.last_throttle))
+    return {
+        "throttle_int": throttle_int,
+        "throttle_float": throttle_float,
+        "resolved_config": resolved_config,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +223,153 @@ def run_pid_characterization():
 
 
 # ---------------------------------------------------------------------------
+# Profile 3: PositionController.update across the confidence-sentinel modes
+# ---------------------------------------------------------------------------
+# 360 steps of exactly 0.02 s (7.2 s total, the ~50 Hz loop rate).  dx/dy are
+# multi-frequency sinusoids that sweep both signs across the +/-5 px deadband;
+# the angle crosses the +/-1 deg deadband.  The confidence input is piecewise
+# constant and drives the mode state machine in update()
+# (src/position_controller.py):
+#
+#   confidence == 1.01 -> __enable_navigation():   position ki/kd zeroed, reset
+#   confidence <  1.0  -> __enable_stabilization(): ki/kd restored from
+#                         POSITION_PID_X/Y, reset
+#
+# 1.01 is the navigation sentinel: sky_anchor's CommandModifier emits
+# matches_percent=101.0 while navigating and src/controller.py forwards
+# confidence = matches_percent / 100.0 (101.0 / 100.0 == 1.01 exactly in
+# IEEE-754).  The three segments exercise stabilization -> navigation ->
+# back-to-stabilization, including both reset() calls at the switches.
+# Altitude is an input of update() but only flows into CSV logging (it is
+# recorded anyway as part of the driven signature).
+
+POSITION_STEPS = 360
+POSITION_DT = 0.02
+
+# Segment boundaries are half-open step ranges [start, stop).
+POSITION_SEGMENTS = {
+    "stabilization": {"start": 0, "stop": 120, "confidence": 0.85},
+    "navigation": {"start": 120, "stop": 240, "confidence": 1.01},
+    "stabilization_return": {"start": 240, "stop": 360, "confidence": 0.9},
+}
+
+POSITION_PROFILE_FORMULA = (
+    "dx(t) = 30*sin(1.3*t) + 8*cos(4.1*t); dy(t) = 25*cos(0.9*t) - 6*sin(3.7*t);"
+    " angle(t) = 2.5*sin(1.7*t); altitude(t) = 5.0 + 0.5*sin(0.5*t);"
+    " with t = step * 0.02, step = 0..359."
+    " confidence: steps 0-119 -> 0.85 (stabilization), 120-239 -> 1.01"
+    " (navigation sentinel: ki/kd zeroed + reset), 240-359 -> 0.9 (back to"
+    " stabilization: ki/kd restored from POSITION_PID_X/Y + reset)."
+    " Drift sweeps both signs across the +/-5 px deadband and the angle"
+    " crosses the +/-1 deg deadband."
+)
+
+
+def position_dx_profile(step):
+    """Deterministic synthetic dx drift (pixels) for a given step index."""
+    t = step * POSITION_DT
+    return 30.0 * math.sin(1.3 * t) + 8.0 * math.cos(4.1 * t)
+
+
+def position_dy_profile(step):
+    """Deterministic synthetic dy drift (pixels) for a given step index."""
+    t = step * POSITION_DT
+    return 25.0 * math.cos(0.9 * t) - 6.0 * math.sin(3.7 * t)
+
+
+def position_angle_profile(step):
+    """Deterministic synthetic angular drift (degrees) for a given step index."""
+    t = step * POSITION_DT
+    return 2.5 * math.sin(1.7 * t)
+
+
+def position_altitude_profile(step):
+    """Deterministic synthetic altitude (meters) for a given step index."""
+    t = step * POSITION_DT
+    return 5.0 + 0.5 * math.sin(0.5 * t)
+
+
+def position_confidence_profile(step):
+    """Piecewise-constant confidence; 1.01 is the exact navigation sentinel."""
+    for segment in POSITION_SEGMENTS.values():
+        if segment["start"] <= step < segment["stop"]:
+            return segment["confidence"]
+    raise ValueError(f"step {step} outside the defined profile segments")
+
+
+def _position_resolved_config(controller):
+    """Snapshot of the PositionController configuration in effect for the run.
+
+    PID gains are the construction-time (stabilization-mode) resolution of
+    src/position_config.py; update() later mutates ki/kd in place on mode
+    switches, which is exactly the behavior the recorded outputs pin down.
+    """
+    from src.position_config import COORDINATE_SYSTEM, POSITION_CONTROL, PWM_LIMITS
+
+    return {
+        "position_pid_x": _pid_snapshot(controller.position_pid_x),
+        "position_pid_y": _pid_snapshot(controller.position_pid_y),
+        "angle_pid": _pid_snapshot(controller.angle_pid),
+        "pwm_neutral": PWM_LIMITS["neutral"],
+        "pwm_clip": {
+            "roll": [PWM_LIMITS["min_roll"], PWM_LIMITS["max_roll"]],
+            "pitch": [PWM_LIMITS["min_pitch"], PWM_LIMITS["max_pitch"]],
+            "yaw": [PWM_LIMITS["min_yaw"], PWM_LIMITS["max_yaw"]],
+        },
+        "deadband": {
+            "x": POSITION_CONTROL["deadband_x"],
+            "y": POSITION_CONTROL["deadband_y"],
+            "angle": POSITION_CONTROL["deadband_angle"],
+        },
+        "coordinate_system": {
+            "invert_x": COORDINATE_SYSTEM["invert_x"],
+            "invert_y": COORDINATE_SYSTEM["invert_y"],
+            "invert_angle": COORDINATE_SYSTEM["invert_angle"],
+        },
+        "velocity_filter_size": controller.velocity_history_x.maxlen,
+    }
+
+
+def run_position_characterization():
+    """Drive a default PositionController over the three-segment profile.
+
+    Returns a dict with:
+    - ``outputs``: full int sequences for roll_pwm / pitch_pwm / yaw_pwm (the
+      complete return value of update() -- it returns exactly these three
+      keys).
+    - ``resolved_config``: see _position_resolved_config().
+
+    PositionCSVLogger and get_logger are patched out so nothing is written
+    under logs/.  As with the altitude run, this wiring MAY be re-wired
+    during refactoring without regenerating the JSON -- outputs are
+    logging-independent (see module docstring, including the csv_logger=None
+    caveat).
+    """
+    from src.position_controller import PositionController
+
+    with mock.patch("src.position_controller.PositionCSVLogger"), \
+            mock.patch("src.position_controller.get_logger",
+                       return_value=mock.Mock()):
+        controller = PositionController()
+        resolved_config = _position_resolved_config(controller)
+        outputs = {"roll_pwm": [], "pitch_pwm": [], "yaw_pwm": []}
+        for step in range(POSITION_STEPS):
+            result = controller.update(
+                dx_pixels=position_dx_profile(step),
+                dy_pixels=position_dy_profile(step),
+                angle_deg=position_angle_profile(step),
+                confidence=position_confidence_profile(step),
+                altitude=position_altitude_profile(step),
+                current_time=step * POSITION_DT,
+            )
+            # np.clip makes these numpy ints; convert for JSON.
+            outputs["roll_pwm"].append(int(result["roll_pwm"]))
+            outputs["pitch_pwm"].append(int(result["pitch_pwm"]))
+            outputs["yaw_pwm"].append(int(result["yaw_pwm"]))
+    return {"outputs": outputs, "resolved_config": resolved_config}
+
+
+# ---------------------------------------------------------------------------
 # Generation
 # ---------------------------------------------------------------------------
 
@@ -178,7 +395,9 @@ def _git_sha():
 
 
 def build_dataset():
-    """Build the complete golden-master dataset (metadata + both runs)."""
+    """Build the complete golden-master dataset (metadata + all three runs)."""
+    altitude_run = run_altitude_characterization()
+    position_run = run_position_characterization()
     return {
         "metadata": {
             "purpose": (
@@ -198,6 +417,7 @@ def build_dataset():
                 "src/altitude_config.py at import time"
             ),
             "csv_logger": "src.pid_controller.AltitudeCSVLogger patched out (mock)",
+            "resolved_config": altitude_run["resolved_config"],
             "profile": {
                 "description": ALTITUDE_PROFILE_FORMULA,
                 "steps": ALTITUDE_STEPS,
@@ -209,7 +429,8 @@ def build_dataset():
                     altitude_profile(step) for step in range(ALTITUDE_STEPS)
                 ],
             },
-            "outputs": run_altitude_characterization(),
+            "outputs": altitude_run["throttle_int"],
+            "outputs_float": altitude_run["throttle_float"],
         },
         "pid_controller": {
             "class": "src.pid_controller.PIDController",
@@ -225,6 +446,42 @@ def build_dataset():
             },
             "outputs": run_pid_characterization(),
         },
+        "position_controller": {
+            "class": "src.position_controller.PositionController",
+            "constructor": (
+                "PositionController() with production defaults bound from "
+                "src/position_config.py at import time"
+            ),
+            "patches": (
+                "src.position_controller.PositionCSVLogger and "
+                "src.position_controller.get_logger patched out (mock)"
+            ),
+            "resolved_config": position_run["resolved_config"],
+            "profile": {
+                "description": POSITION_PROFILE_FORMULA,
+                "steps": POSITION_STEPS,
+                "dt": POSITION_DT,
+                "segments": POSITION_SEGMENTS,
+            },
+            "inputs": {
+                "dx_pixels": [
+                    position_dx_profile(step) for step in range(POSITION_STEPS)
+                ],
+                "dy_pixels": [
+                    position_dy_profile(step) for step in range(POSITION_STEPS)
+                ],
+                "angle_deg": [
+                    position_angle_profile(step) for step in range(POSITION_STEPS)
+                ],
+                "altitude": [
+                    position_altitude_profile(step) for step in range(POSITION_STEPS)
+                ],
+                "confidence": [
+                    position_confidence_profile(step) for step in range(POSITION_STEPS)
+                ],
+            },
+            "outputs": position_run["outputs"],
+        },
     }
 
 
@@ -236,13 +493,20 @@ def main():
         fh.write("\n")
 
     alt = dataset["altitude_controller"]["outputs"]
+    alt_float = dataset["altitude_controller"]["outputs_float"]
     pid = dataset["pid_controller"]["outputs"]
+    pos = dataset["position_controller"]["outputs"]
     print(f"Wrote {DATA_FILE}")
     print(f"  git_sha_at_generation: {dataset['metadata']['git_sha_at_generation']}")
     print(f"  altitude_controller: {len(alt)} outputs, "
-          f"first={alt[0]}, last={alt[-1]}, min={min(alt)}, max={max(alt)}")
+          f"first={alt[0]}, last={alt[-1]}, min={min(alt)}, max={max(alt)}; "
+          f"float first={alt_float[0]!r}, last={alt_float[-1]!r}")
     print(f"  pid_controller:      {len(pid)} outputs, "
           f"first={pid[0]!r}, last={pid[-1]!r}")
+    for axis in ("roll_pwm", "pitch_pwm", "yaw_pwm"):
+        seq = pos[axis]
+        print(f"  position_controller {axis}: {len(seq)} outputs, "
+              f"first={seq[0]}, last={seq[-1]}, min={min(seq)}, max={max(seq)}")
 
 
 if __name__ == "__main__":

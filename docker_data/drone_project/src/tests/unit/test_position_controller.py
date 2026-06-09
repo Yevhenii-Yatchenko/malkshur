@@ -1,4 +1,5 @@
-"""Unit tests for PositionController.pixels_to_meters (src/position_controller.py).
+"""Unit tests for PositionController (src/position_controller.py):
+pixels_to_meters and the confidence-sentinel mode state machine in update().
 
 CAUTION (LC-1 in the refactoring plan): PositionController.__init__ eagerly
 creates a PositionCSVLogger (mkdir + open file under logs/csv/) and a file
@@ -21,7 +22,8 @@ from unittest import mock
 
 import pytest
 
-from src.position_config import ALTITUDE_COMPENSATION
+from src.position_config import (
+    ALTITUDE_COMPENSATION, POSITION_PID_X, POSITION_PID_Y, PWM_LIMITS)
 from src.position_controller import PositionController
 
 pytestmark = [pytest.mark.unit, pytest.mark.pid]
@@ -98,3 +100,133 @@ class TestPixelsToMeters:
         base = controller.pixels_to_meters(10.0, 3.0)
         assert controller.pixels_to_meters(30.0, 3.0) == pytest.approx(3.0 * base)
         assert controller.pixels_to_meters(-10.0, 3.0) == pytest.approx(-base)
+
+
+def _update(controller, *, confidence, dx=0.0, dy=0.0, angle=0.0, step=0, **kwargs):
+    """Drive update() with deterministic time; only the fields under test vary."""
+    return controller.update(
+        dx_pixels=dx,
+        dy_pixels=dy,
+        angle_deg=angle,
+        confidence=confidence,
+        altitude=2.0,
+        current_time=step * 0.02,
+        **kwargs,
+    )
+
+
+class TestConfidenceSentinelStateMachine:
+    """Pin the confidence-sentinel mode state machine at the top of update().
+
+    Producer/consumer contract (producer side is pinned in
+    tests/unit/test_command_modifier.py):
+
+    - While navigating, sky_anchor's CommandModifier emits
+      matches_percent=101.0; src/controller.py forwards
+      confidence = matches_percent / 100.0, and 101.0 / 100.0 == 1.01 holds
+      EXACTLY in IEEE-754 doubles.
+    - confidence == 1.01 -> navigation mode: position-PID ki/kd zeroed
+      (__enable_navigation), controller state reset.
+    - confidence < 1.0   -> stabilization mode: ki/kd restored from the
+      POSITION_PID_X/Y config globals (__enable_stabilization), state reset.
+    - 1.0 <= confidence != 1.01 -> NO transition (the mode is sticky).
+
+    The mode flag itself is name-mangled, so these tests assert the observable
+    consequences instead: the live gains on the public position_pid_x/y
+    PIDControllers, the reset side effects on public state, and the resulting
+    PWM outputs.
+    """
+
+    def _assert_stabilization_gains(self, controller):
+        assert controller.position_pid_x.ki == POSITION_PID_X["ki"]
+        assert controller.position_pid_x.kd == POSITION_PID_X["kd"]
+        assert controller.position_pid_y.ki == POSITION_PID_Y["ki"]
+        assert controller.position_pid_y.kd == POSITION_PID_Y["kd"]
+
+    def _assert_navigation_gains(self, controller):
+        assert controller.position_pid_x.ki == 0.0
+        assert controller.position_pid_x.kd == 0.0
+        assert controller.position_pid_y.ki == 0.0
+        assert controller.position_pid_y.kd == 0.0
+
+    def test_starts_in_stabilization_with_config_gains(self, controller):
+        self._assert_stabilization_gains(controller)
+
+    def test_sentinel_confidence_switches_to_navigation_and_zeroes_ki_kd(
+        self, controller
+    ):
+        _update(controller, confidence=1.01)
+        self._assert_navigation_gains(controller)
+
+    def test_navigation_keeps_kp_and_angle_pid_untouched(self, controller):
+        angle_gains = (
+            controller.angle_pid.kp, controller.angle_pid.ki, controller.angle_pid.kd,
+        )
+        _update(controller, confidence=1.01)
+        assert controller.position_pid_x.kp == POSITION_PID_X["kp"]
+        assert controller.position_pid_y.kp == POSITION_PID_Y["kp"]
+        assert (
+            controller.angle_pid.kp, controller.angle_pid.ki, controller.angle_pid.kd,
+        ) == angle_gains
+
+    def test_confidence_below_one_restores_gains_from_config_globals(self, controller):
+        _update(controller, confidence=1.01, step=0)
+        self._assert_navigation_gains(controller)
+        _update(controller, confidence=0.99, step=1)
+        self._assert_stabilization_gains(controller)
+
+    def test_confidence_exactly_one_is_sticky_in_navigation(self, controller):
+        _update(controller, confidence=1.01, step=0)
+        _update(controller, confidence=1.0, step=1)  # neither == 1.01 nor < 1.0
+        self._assert_navigation_gains(controller)
+
+    @pytest.mark.parametrize("confidence", [1.0, 1.005, 1.0099999999, 1.02, 2.0])
+    def test_near_sentinel_confidence_does_not_enter_navigation(
+        self, controller, confidence
+    ):
+        """The trigger is an exact float equality with 1.01 -- knife-edge by
+        design (quirk pinned, not endorsed). Only the exact wire value
+        101.0 / 100.0 may flip the mode."""
+        _update(controller, confidence=confidence)
+        self._assert_stabilization_gains(controller)
+
+    def test_mode_switch_resets_velocity_estimate_and_navigation_targets(
+        self, controller
+    ):
+        # Build up observable state in stabilization mode...
+        _update(controller, confidence=0.85, dx=20.0, step=0,
+                target_dx_pixels=42.0, target_dy_pixels=-17.0)
+        _update(controller, confidence=0.85, dx=40.0, step=1)
+        assert controller.estimated_velocity_x != 0.0
+        assert controller.navigation_target_dx == 42.0
+        assert controller.navigation_target_dy == -17.0
+        # ...the switching update wipes it via reset() before acting.
+        _update(controller, confidence=1.01, step=2)
+        assert controller.estimated_velocity_x == 0.0
+        assert controller.estimated_velocity_y == 0.0
+        assert controller.navigation_target_dx == 0.0
+        assert controller.navigation_target_dy == 0.0
+
+    def test_navigation_mode_outputs_are_pure_proportional(self, controller):
+        """With ki = kd = 0 the position PIDs become stateless P controllers:
+        identical drift inputs must produce identical PWM outputs on every
+        call (no integral creep, no derivative kick)."""
+        _update(controller, confidence=1.01, step=0)  # enter navigation
+        results = [
+            _update(controller, confidence=1.01, dx=-20.0, dy=10.0, step=step)
+            for step in (1, 2, 3)
+        ]
+        # COORDINATE_SYSTEM inverts both axes: dx=-20 -> +20 px (error -20),
+        # dy=+10 -> -10 px (error +10); with kp=1.2 the pure-P outputs are
+        # roll = int(1500 - 24.0) = 1476 and pitch = int(1500 + 12.0) = 1512.
+        expected_roll = int(PWM_LIMITS["neutral"] + POSITION_PID_X["kp"] * -20.0)
+        expected_pitch = int(PWM_LIMITS["neutral"] + POSITION_PID_Y["kp"] * 10.0)
+        assert [result["roll_pwm"] for result in results] == [expected_roll] * 3
+        assert [result["pitch_pwm"] for result in results] == [expected_pitch] * 3
+
+    def test_zero_drift_in_navigation_returns_neutral_pwm(self, controller):
+        _update(controller, confidence=1.01, step=0)
+        result = _update(controller, confidence=1.01, step=1)
+        assert result["roll_pwm"] == PWM_LIMITS["neutral"]
+        assert result["pitch_pwm"] == PWM_LIMITS["neutral"]
+        assert result["yaw_pwm"] == PWM_LIMITS["neutral"]
