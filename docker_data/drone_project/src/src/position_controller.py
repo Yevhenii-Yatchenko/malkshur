@@ -40,12 +40,17 @@ class PositionController:
     __mode: Literal['stabilization', 'navigation'] = 'stabilization'
 
     def __init__(self,
-                 start_timestamp: Optional[datetime] = None):
+                 start_timestamp: Optional[datetime] = None,
+                 *,
+                 csv_logger=None):
         """
         Initialize position controller with configuration from position_config.
 
         Args:
             start_timestamp: Optional datetime for consistent session naming
+            csv_logger: Optional injected CSV logger for control-data logging.
+                If None (default), a file-writing PositionCSVLogger is created
+                exactly as before.
         """
         self.logger = get_logger("position_controller", "logs/position_controller.log")
         # Initialize position PID controllers (outer loop)
@@ -107,7 +112,9 @@ class PositionController:
         self.navigation_target_dy = 0.0
 
         # CSV logging
-        self.csv_logger = PositionCSVLogger(start_timestamp=start_timestamp)
+        if csv_logger is None:
+            csv_logger = PositionCSVLogger(start_timestamp=start_timestamp)
+        self.csv_logger = csv_logger
 
         # State tracking
         self.is_active = False

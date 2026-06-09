@@ -8,11 +8,17 @@ on purpose so refactoring-induced changes are caught.
 
 All tests are fully deterministic: time is injected via the ``current_time``
 parameter, no wall clock, no I/O, no mocks of the math.
+
+Step 3 (LC-1) adds TestAltitudeControllerCsvLoggerInjection: construction
+wiring tests for AltitudeController's new ``csv_logger=`` parameter (only the
+file-writing logger class is mocked there -- never the math).
 """
+
+from unittest import mock
 
 import pytest
 
-from src.pid_controller import PIDController
+from src.pid_controller import AltitudeController, PIDController
 
 pytestmark = [pytest.mark.unit, pytest.mark.pid]
 
@@ -158,3 +164,51 @@ class TestReset:
         pid.reset()
         # First update after reset uses the documented dt = 0.1 assumption.
         assert pid.update(2.0, 0.0, current_time=100.0) == pytest.approx(0.2)
+
+
+class TestAltitudeControllerCsvLoggerInjection:
+    """Step 3 (LC-1): the ``csv_logger=`` constructor injection contract.
+
+    - csv_logger omitted/None -> a file-writing AltitudeCSVLogger is created
+      exactly as before (backward compatibility; the class is patched here so
+      the test itself stays free of file I/O);
+    - csv_logger injected -> NO AltitudeCSVLogger is constructed (no file
+      I/O) and update() routes its log write to the injected object
+      (DEBUG['plot_data'] is True in altitude_config, so update() logs on
+      every call).
+    """
+
+    def test_default_still_creates_file_logger_exactly_as_before(self):
+        ts = mock.sentinel.start_timestamp
+        with mock.patch("src.pid_controller.AltitudeCSVLogger") as csv_cls:
+            controller = AltitudeController(start_timestamp=ts)
+        csv_cls.assert_called_once_with(
+            start_timestamp=ts, controller_type='takeoff'
+        )
+        assert controller.csv_logger is csv_cls.return_value
+
+    def test_injected_logger_is_used_and_no_file_logger_is_created(self):
+        fake = mock.Mock(name="injected_csv_logger")
+        with mock.patch("src.pid_controller.AltitudeCSVLogger") as csv_cls:
+            controller = AltitudeController(csv_logger=fake)
+        csv_cls.assert_not_called()
+        assert controller.csv_logger is fake
+
+    def test_update_logs_to_the_injected_logger(self):
+        from src.altitude_config import DEBUG
+
+        # Precondition for the call-count assert below.
+        assert DEBUG.get("plot_data") is True
+        fake = mock.Mock(name="injected_csv_logger")
+        with mock.patch("src.pid_controller.AltitudeCSVLogger") as csv_cls:
+            controller = AltitudeController(csv_logger=fake)
+        throttle = controller.update(
+            target_altitude=5.0, current_altitude=4.5, current_time=0.0
+        )
+        csv_cls.assert_not_called()
+        assert isinstance(throttle, int)
+        assert fake.append.call_count == 1
+        logged = fake.append.call_args[0][0]
+        assert logged["target_altitude"] == pytest.approx(5.0)
+        assert logged["current_altitude"] == pytest.approx(4.5)
+        assert logged["throttle_output"] == pytest.approx(controller.last_throttle)

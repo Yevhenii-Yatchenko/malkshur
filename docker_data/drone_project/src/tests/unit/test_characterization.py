@@ -11,13 +11,16 @@ the sequences stored in ``tests/unit/data/altitude_characterization.json``.
 Step 3+ migration note (logger injection): the recorded outputs are
 logging-independent -- the controllers only ever WRITE to their loggers,
 never read from them -- so the construction/patch wiring inside the run
-functions MAY be re-wired during refactoring (e.g. constructor ``csv_logger``
-injection in Step 3) WITHOUT regenerating the JSON.  Regenerate only when a
-behavior change to the control math is intentional and reviewed.  CAUTION:
-Step 3's planned backward-compat API (``csv_logger=None`` -> the constructor
-creates a real file-writing logger) means the replay must then inject an
-explicit null-object logger -- passing ``None`` would silently re-enable
-file I/O.
+functions could be re-wired during refactoring WITHOUT regenerating the
+JSON.  Step 3 did exactly that: the run functions now inject an explicit
+``gen.NullCSVLogger`` through the new ``csv_logger=`` constructor parameter
+instead of ``mock.patch``-ing the CSV logger classes, and this replay still
+asserting against the UNCHANGED recorded sequences is the proof that the
+injection refactoring preserved behavior.  Regenerate only when a behavior
+change to the control math is intentional and reviewed.  CAUTION: the
+backward-compat API (``csv_logger=None`` -> the constructor creates a real
+file-writing logger) means the replay must inject an explicit null-object
+logger -- passing ``None`` would silently re-enable file I/O.
 
 If these tests fail during refactoring, the control behavior changed.
 """

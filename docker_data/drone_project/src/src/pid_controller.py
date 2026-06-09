@@ -2,7 +2,7 @@ import time
 from collections import deque
 import numpy as np
 from .altitude_csv_logger import AltitudeCSVLogger
-from src.altitude_config import ALTITUDE_PID_TAKEOFF, VELOCITY_PID_FLIGHT, LIMITS, THROTTLE, FILTERING
+from src.altitude_config import ALTITUDE_PID_TAKEOFF, VELOCITY_PID_FLIGHT, LIMITS, THROTTLE, FILTERING, CONTROL, DEBUG
 
 
 class PIDController:
@@ -199,7 +199,9 @@ class AltitudeController:
                  throttle_max=THROTTLE['max'],
                  altitude_filter_alpha=FILTERING['altitude_filter_alpha'],
                  velocity_filter_size=FILTERING['velocity_filter_size'],
-                 start_timestamp=None):
+                 start_timestamp=None,
+                 *,
+                 csv_logger=None):
         """
         Initialize altitude controller.
 
@@ -213,6 +215,9 @@ class AltitudeController:
             throttle_max: Maximum throttle PWM value
             altitude_filter_alpha: Exponential filter coefficient for altitude
             velocity_filter_size: Number of samples for velocity averaging
+            csv_logger: Optional injected CSV logger for control-data logging.
+                If None (default), a file-writing AltitudeCSVLogger is created
+                exactly as before.
         """
         # Position controller (outer loop)
         self.position_pid = PIDController(
@@ -253,11 +258,12 @@ class AltitudeController:
 
         # Throttle smoothing
         self.last_throttle = throttle_hover
-        self.throttle_rate_limit = 50  # Max change per update
 
         # Initialize CSV logger with session timestamp
         # Determine controller type for data labeling
-        self.csv_logger = AltitudeCSVLogger(start_timestamp=start_timestamp, controller_type='takeoff')
+        if csv_logger is None:
+            csv_logger = AltitudeCSVLogger(start_timestamp=start_timestamp, controller_type='takeoff')
+        self.csv_logger = csv_logger
 
         self.__last_reset_time = 0
 
@@ -334,7 +340,6 @@ class AltitudeController:
         throttle = np.clip(throttle, self.throttle_min, self.throttle_max)
 
         # Apply rate limiting to prevent sudden jumps
-        from .altitude_config import THROTTLE
         if 'rate_limit' in THROTTLE:
             max_change = THROTTLE['rate_limit']
             throttle_change = throttle - self.last_throttle
@@ -342,7 +347,6 @@ class AltitudeController:
                 throttle = self.last_throttle + np.sign(throttle_change) * max_change
 
         # Apply exponential filter for smoother output
-        from .altitude_config import CONTROL
         if 'throttle_filter_alpha' in CONTROL:
             alpha = CONTROL['throttle_filter_alpha']
             throttle = alpha * throttle + (1 - alpha) * self.last_throttle
@@ -353,7 +357,6 @@ class AltitudeController:
         self.last_update_time = current_time
 
         # Record control data for plotting
-        from .altitude_config import DEBUG
         if DEBUG.get('plot_data', False):
             control_data = {
                 'timestamp': current_time,

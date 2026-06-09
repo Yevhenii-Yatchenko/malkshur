@@ -24,20 +24,22 @@ Determinism notes:
   no randomness.
 - ``current_time`` is injected as exact multiples of the step period -- no
   wall-clock dependence.
-- The file-writing loggers (``AltitudeCSVLogger``, ``PositionCSVLogger``,
-  ``get_logger``) are patched out, so no log files are written.
+- The file-writing CSV loggers are replaced by an explicit ``NullCSVLogger``
+  injected via the Step 3 ``csv_logger=`` constructor parameter, and
+  ``get_logger`` is patched out, so no log files are written.
 
 Step 3+ migration note (logger injection):
 The recorded outputs are logging-independent: the controllers only ever WRITE
 to their loggers (append/info calls on pure snapshots of already-computed
 state), never read anything back, so logging cannot influence the control
-math.  The construction/patch wiring inside the run functions below MAY
-therefore be re-wired during refactoring (e.g. constructor ``csv_logger``
-injection in Step 3) WITHOUT regenerating this JSON; regenerate only for an
-intentional, reviewed behavior change to the control math.  CAUTION: Step 3's
-planned backward-compat API (``csv_logger=None`` -> the constructor creates a
-real file-writing logger) means the replay must then inject an explicit
-null-object logger -- passing ``None`` would silently re-enable file I/O.
+math.  The construction/patch wiring inside the run functions below could
+therefore be re-wired during refactoring WITHOUT regenerating this JSON --
+and Step 3 did exactly that (explicit ``NullCSVLogger`` injection instead of
+``mock.patch``-ing the CSV logger classes); regenerate only for an
+intentional, reviewed behavior change to the control math.  CAUTION: the
+backward-compat API (``csv_logger=None`` -> the constructor creates a real
+file-writing logger) means the replay must inject an explicit null-object
+logger -- passing ``None`` would silently re-enable file I/O.
 """
 
 import json
@@ -57,6 +59,29 @@ if PROJECT_ROOT not in sys.path:
 DATA_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "altitude_characterization.json"
 )
+
+
+class NullCSVLogger:
+    """No-op stand-in for the file-writing CSV loggers (Step 3 injection).
+
+    A real object with the full surface the controllers touch on their
+    ``csv_logger``: ``append(data)`` (called from update()), ``close()``
+    (PositionController.__del__) and an assignable ``writer`` attribute
+    (PositionController.stop() sets ``csv_logger.writer = None``).  Injecting
+    this explicitly is REQUIRED for an I/O-free run: passing ``csv_logger=None``
+    makes the constructors create real file-writing loggers (the
+    backward-compat default).
+    """
+
+    def __init__(self):
+        self.writer = None
+
+    def append(self, data):
+        pass
+
+    def close(self):
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Profile 1: AltitudeController.update over a synthetic takeoff
@@ -105,9 +130,10 @@ def _altitude_resolved_config(controller):
     Recorded so a future mismatch can be triaged as "config drifted" vs "math
     drifted".  Values are read back from the constructed controller (i.e. the
     constructor-default resolution of src/altitude_config.py), except the last
-    two, which ``update()`` re-reads from altitude_config on EVERY call (the
-    constructor's ``self.throttle_rate_limit`` attribute is not what the rate
-    limiter actually uses).
+    two, which ``update()`` reads from the altitude_config THROTTLE/CONTROL
+    dicts on EVERY call (rate_limit has always effectively been
+    THROTTLE['rate_limit']; the dead ``self.throttle_rate_limit = 50``
+    constructor attribute that used to shadow it was removed in Step 3).
     """
     from src.altitude_config import CONTROL, THROTTLE
 
@@ -139,27 +165,26 @@ def run_altitude_characterization():
       ``last_throttle`` after each call captures the exact pre-int value.
     - ``resolved_config``: see _altitude_resolved_config().
 
-    The CSV logger is patched out so nothing is written under logs/.  This
-    wiring MAY be re-wired during refactoring (e.g. Step 3 csv_logger
-    injection) without regenerating the JSON -- outputs are
-    logging-independent (see module docstring, including the csv_logger=None
-    caveat).
+    An explicit NullCSVLogger is injected via the Step 3 ``csv_logger=``
+    parameter so nothing is written under logs/ (before Step 3 this was a
+    ``mock.patch`` of AltitudeCSVLogger; the JSON was NOT regenerated for the
+    re-wiring -- outputs are logging-independent, see module docstring,
+    including the csv_logger=None caveat).
     """
     from src.pid_controller import AltitudeController
 
-    with mock.patch("src.pid_controller.AltitudeCSVLogger"):
-        controller = AltitudeController()
-        resolved_config = _altitude_resolved_config(controller)
-        throttle_int = []
-        throttle_float = []
-        for step in range(ALTITUDE_STEPS):
-            throttle = controller.update(
-                target_altitude=ALTITUDE_TARGET,
-                current_altitude=altitude_profile(step),
-                current_time=step * ALTITUDE_DT,
-            )
-            throttle_int.append(int(throttle))
-            throttle_float.append(float(controller.last_throttle))
+    controller = AltitudeController(csv_logger=NullCSVLogger())
+    resolved_config = _altitude_resolved_config(controller)
+    throttle_int = []
+    throttle_float = []
+    for step in range(ALTITUDE_STEPS):
+        throttle = controller.update(
+            target_altitude=ALTITUDE_TARGET,
+            current_altitude=altitude_profile(step),
+            current_time=step * ALTITUDE_DT,
+        )
+        throttle_int.append(int(throttle))
+        throttle_float.append(float(controller.last_throttle))
     return {
         "throttle_int": throttle_int,
         "throttle_float": throttle_float,
@@ -339,18 +364,18 @@ def run_position_characterization():
       keys).
     - ``resolved_config``: see _position_resolved_config().
 
-    PositionCSVLogger and get_logger are patched out so nothing is written
-    under logs/.  As with the altitude run, this wiring MAY be re-wired
-    during refactoring without regenerating the JSON -- outputs are
-    logging-independent (see module docstring, including the csv_logger=None
+    An explicit NullCSVLogger is injected via the Step 3 ``csv_logger=``
+    parameter and get_logger is patched out so nothing is written under
+    logs/ (before Step 3 PositionCSVLogger was ``mock.patch``-ed instead;
+    the JSON was NOT regenerated for the re-wiring -- outputs are
+    logging-independent, see module docstring, including the csv_logger=None
     caveat).
     """
     from src.position_controller import PositionController
 
-    with mock.patch("src.position_controller.PositionCSVLogger"), \
-            mock.patch("src.position_controller.get_logger",
-                       return_value=mock.Mock()):
-        controller = PositionController()
+    with mock.patch("src.position_controller.get_logger",
+                    return_value=mock.Mock()):
+        controller = PositionController(csv_logger=NullCSVLogger())
         resolved_config = _position_resolved_config(controller)
         outputs = {"roll_pwm": [], "pitch_pwm": [], "yaw_pwm": []}
         for step in range(POSITION_STEPS):
@@ -416,7 +441,10 @@ def build_dataset():
                 "AltitudeController() with production defaults bound from "
                 "src/altitude_config.py at import time"
             ),
-            "csv_logger": "src.pid_controller.AltitudeCSVLogger patched out (mock)",
+            "csv_logger": (
+                "explicit NullCSVLogger injected via the Step 3 csv_logger= "
+                "constructor parameter (no file-writing logger created)"
+            ),
             "resolved_config": altitude_run["resolved_config"],
             "profile": {
                 "description": ALTITUDE_PROFILE_FORMULA,
@@ -453,8 +481,9 @@ def build_dataset():
                 "src/position_config.py at import time"
             ),
             "patches": (
-                "src.position_controller.PositionCSVLogger and "
-                "src.position_controller.get_logger patched out (mock)"
+                "src.position_controller.get_logger patched out (mock); "
+                "explicit NullCSVLogger injected via the Step 3 csv_logger= "
+                "constructor parameter (no file-writing logger created)"
             ),
             "resolved_config": position_run["resolved_config"],
             "profile": {

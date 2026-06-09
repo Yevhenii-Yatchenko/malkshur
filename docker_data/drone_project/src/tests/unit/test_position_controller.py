@@ -1,11 +1,14 @@
 """Unit tests for PositionController (src/position_controller.py):
-pixels_to_meters and the confidence-sentinel mode state machine in update().
+pixels_to_meters, the confidence-sentinel mode state machine in update(),
+and the Step 3 csv_logger constructor injection (LC-1).
 
-CAUTION (LC-1 in the refactoring plan): PositionController.__init__ eagerly
-creates a PositionCSVLogger (mkdir + open file under logs/csv/) and a file
-logger via get_logger (logs/position_controller.log).  Production code must
-not change in Step 2, so both are patched in the module namespace; the rest
-of construction (the three real PIDControllers, config binding) runs for real.
+I/O notes: since Step 3 the CSV logger is injected through the constructor's
+``csv_logger=`` parameter (a NullCSVLogger here -- no mkdir/open under
+logs/csv/), so the Step 2 mock.patch of PositionCSVLogger is gone.
+__init__ still eagerly creates a file logger via get_logger
+(logs/position_controller.log), so that one remains patched in the module
+namespace; the rest of construction (the three real PIDControllers, config
+binding) runs for real.
 
 The expected values below are literals on purpose: with the current
 position_config.ALTITUDE_COMPENSATION (reference_altitude=2.0,
@@ -22,6 +25,9 @@ from unittest import mock
 
 import pytest
 
+# Shared null-object logger of the characterization suite (importable as a
+# bare module: tests/unit/ is on sys.path under pytest's prepend import mode).
+from generate_characterization import NullCSVLogger
 from src.position_config import (
     ALTITUDE_COMPENSATION, POSITION_PID_X, POSITION_PID_Y, PWM_LIMITS)
 from src.position_controller import PositionController
@@ -31,11 +37,11 @@ pytestmark = [pytest.mark.unit, pytest.mark.pid]
 
 @pytest.fixture
 def controller():
-    with mock.patch("src.position_controller.PositionCSVLogger") as csv_cls, \
-            mock.patch("src.position_controller.get_logger", return_value=mock.Mock()):
-        instance = PositionController()
-        # Sanity: the file-writing logger really was replaced by the mock.
-        assert instance.csv_logger is csv_cls.return_value
+    null_logger = NullCSVLogger()
+    with mock.patch("src.position_controller.get_logger", return_value=mock.Mock()):
+        instance = PositionController(csv_logger=null_logger)
+        # Sanity: the injected null logger really is in place (Step 3).
+        assert instance.csv_logger is null_logger
         yield instance
 
 
@@ -230,3 +236,46 @@ class TestConfidenceSentinelStateMachine:
         assert result["roll_pwm"] == PWM_LIMITS["neutral"]
         assert result["pitch_pwm"] == PWM_LIMITS["neutral"]
         assert result["yaw_pwm"] == PWM_LIMITS["neutral"]
+
+
+class TestCsvLoggerInjection:
+    """Step 3 (LC-1): the ``csv_logger=`` constructor injection contract.
+
+    - csv_logger omitted/None -> a file-writing PositionCSVLogger is created
+      exactly as before (backward compatibility; the class is patched here so
+      the test itself stays free of file I/O);
+    - csv_logger injected -> NO PositionCSVLogger is constructed (no file
+      I/O) and update() routes its log write to the injected object.
+    """
+
+    def test_default_still_creates_file_logger_exactly_as_before(self):
+        ts = mock.sentinel.start_timestamp
+        with mock.patch("src.position_controller.PositionCSVLogger") as csv_cls, \
+                mock.patch("src.position_controller.get_logger",
+                           return_value=mock.Mock()):
+            instance = PositionController(start_timestamp=ts)
+        csv_cls.assert_called_once_with(start_timestamp=ts)
+        assert instance.csv_logger is csv_cls.return_value
+
+    def test_injected_logger_is_used_and_no_file_logger_is_created(self):
+        fake = mock.Mock(name="injected_csv_logger")
+        with mock.patch("src.position_controller.PositionCSVLogger") as csv_cls, \
+                mock.patch("src.position_controller.get_logger",
+                           return_value=mock.Mock()):
+            instance = PositionController(csv_logger=fake)
+        csv_cls.assert_not_called()
+        assert instance.csv_logger is fake
+
+    def test_update_logs_to_the_injected_logger(self):
+        fake = mock.Mock(name="injected_csv_logger")
+        with mock.patch("src.position_controller.PositionCSVLogger") as csv_cls, \
+                mock.patch("src.position_controller.get_logger",
+                           return_value=mock.Mock()):
+            instance = PositionController(csv_logger=fake)
+        _update(instance, confidence=0.85, dx=10.0, dy=-5.0, angle=0.5)
+        csv_cls.assert_not_called()
+        assert fake.append.call_count == 1
+        logged = fake.append.call_args[0][0]
+        assert logged["timestamp"] == pytest.approx(0.0)
+        assert logged["matches_percent"] == pytest.approx(85.0)
+        assert logged["altitude"] == pytest.approx(2.0)
