@@ -80,13 +80,17 @@ class SkyAnchorClient:
                         try:
                             payload = json.loads(line.strip())
                             reading = StabilizerReading.from_payload(payload)
+                            # Log outside the lock: the 100 Hz consumer
+                            # contends on it, and the logger does file I/O.
+                            self.logger.info(f"data: {reading}")
                             with self._lock:
-                                self.logger.info(f"data: {reading}")
                                 self.__reading = reading
 
                         except json.JSONDecodeError as e:
                             self.logger.error(f"Error parsing JSON: {e}")
-                        except (KeyError, TypeError, ValueError) as e:
+                        except (KeyError, TypeError, ValueError, AttributeError) as e:
+                            # One bad line must never kill the receive
+                            # thread; drop it and keep consuming.
                             self.logger.error(f"Malformed payload: {e}")
 
             except socket.timeout:

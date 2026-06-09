@@ -94,3 +94,52 @@ class TestGetActiveTarget:
         before = {key: value for key, value in payload.items()}
         server.get_active_target(timeout_s=10.0, min_confidence=0.5)
         assert payload == before
+
+
+class TestGetActiveTargetMalformedPayloads:
+    """Step 4 review fix: _handle_client stores whatever json.loads returned,
+    so get_active_target must drop garbage (log + None) instead of raising
+    into the 100 Hz control loop.  Data validity belongs to the server."""
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # direction_vector: null -> .get on None raised AttributeError
+            {"class_id": 1, "confidence": 0.9, "direction_vector": None},
+            # direction: 5 -> len(5) raised TypeError
+            {
+                "class_id": 1,
+                "confidence": 0.9,
+                "direction_vector": {"direction": 5},
+            },
+            # confidence: "abc" -> float("abc") raised ValueError
+            {
+                "class_id": 1,
+                "confidence": "abc",
+                "direction_vector": {"direction": [0.25, -0.1, 1.0]},
+            },
+            # whole payload not a JSON object (client sent e.g. `5` or `"x"`)
+            5,
+            "x",
+            [0.25, -0.1],
+        ],
+        ids=[
+            "direction_vector-null",
+            "direction-not-a-list",
+            "confidence-not-a-number",
+            "payload-int",
+            "payload-str",
+            "payload-list",
+        ],
+    )
+    def test_malformed_payload_returns_none_without_raising(self, payload):
+        server = make_server(payload, age_s=0.0)
+        assert server.get_active_target(timeout_s=10.0, min_confidence=0.5) is None
+
+    def test_malformed_payload_is_logged(self):
+        server = make_server(
+            {"class_id": 1, "confidence": 0.9, "direction_vector": None},
+            age_s=0.0,
+        )
+        server.get_active_target(timeout_s=10.0, min_confidence=0.5)
+        assert server.logger.error.call_count == 1

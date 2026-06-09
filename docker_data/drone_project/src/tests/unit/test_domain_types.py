@@ -77,6 +77,15 @@ class TestStabilizerReadingParsing:
         with pytest.raises(KeyError):
             StabilizerReading.from_payload(payload)
 
+    @pytest.mark.parametrize("payload", [None, 5, "x", []])
+    def test_non_mapping_payload_raises_type_error(self, payload):
+        """Valid JSON that is not an object (``null``, ``5``, ``"x"``,
+        ``[]``) must raise TypeError -- which is in the client's per-line
+        catch tuple -- not AttributeError, which used to escape it and
+        kill the receive thread permanently."""
+        with pytest.raises(TypeError, match="must be a JSON object"):
+            StabilizerReading.from_payload(payload)
+
     def test_confidence_property_maps_matches_percent_onto_unit_range(self):
         """The /100.0 mapping moved from controller.py into the reading."""
         assert StabilizerReading.from_payload(
@@ -184,6 +193,13 @@ class TestDetectionReadingParsing:
         del payload["direction_vector"]
         reading = DetectionReading.from_payload(payload)
         assert (reading.dir_x, reading.dir_y) == (0.0, 0.0)
+
+    @pytest.mark.parametrize("payload", [None, 5, "x", []])
+    def test_non_mapping_payload_raises_type_error(self, payload):
+        """Same guard as StabilizerReading: a valid-JSON non-object must
+        raise TypeError, which DetectionServer.get_active_target catches."""
+        with pytest.raises(TypeError, match="must be a JSON object"):
+            DetectionReading.from_payload(payload)
 
     def test_reading_is_frozen(self):
         reading = DetectionReading.from_payload(detection_payload())

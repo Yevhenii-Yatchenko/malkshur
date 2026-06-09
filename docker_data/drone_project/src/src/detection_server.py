@@ -165,15 +165,22 @@ class DetectionServer:
                 ``>= INTERCEPT_CONFIDENCE_THRESHOLD``)
 
         Returns:
-            DetectionReading for an active target, or None
+            DetectionReading for an active target, or None.  Malformed
+            payloads (non-object JSON, wrong field types -- _handle_client
+            stores whatever json.loads returned) are logged and treated as
+            no target; they never raise into the control loop.
         """
-        data = self.get_latest_detection()
-        if not data:
-            return None
-        if self.get_time_since_last_detection() >= timeout_s:
+        try:
+            data = self.get_latest_detection()
+            if not data:
+                return None
+            if self.get_time_since_last_detection() >= timeout_s:
+                return None
+            reading = DetectionReading.from_payload(data)
+        except (TypeError, ValueError, AttributeError) as e:
+            self.logger.error(f"Dropping malformed detection payload: {e}")
             return None
 
-        reading = DetectionReading.from_payload(data)
         if reading.confidence < min_confidence:
             return None
         return reading

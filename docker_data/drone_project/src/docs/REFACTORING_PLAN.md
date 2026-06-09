@@ -161,12 +161,15 @@ src/
 
 **Крок 5. Розпиляти `__updateThrottle` (HC-1, IE-1).**
 Витягти `InterceptGuidance` (state machine + deadband/yaw/altitude-корекції, рядки 296–383) і `StabilizationBehavior` (рядки 386–413). `__updateThrottle` стає ~20-рядковим: вибір behavior → setpoints → altitude PID → send. Golden run після кожного підкроку.
+- Re-sync `StabilizerManager.is_connected` with client health (dead receive thread currently leaves manager "connected" forever).
 
 **Крок 6. `RCSetpoints` (IE-4).**
 Клас-власник roll/pitch/yaw/throttle/target_altitude з клампінгом з конфігу (єдине джерело ліміту 1800). Прибрати `__set_throttle_base`-хак.
 
 **Крок 7. Composition root + конфіг-об'єкти (LC-2, LC-3).**
 `src/app.py` будує: MAVLinkManager → SensorManager → StabilizerManager(client=...) → контролери(config=..., csv_logger=...) → CommandHandler(telnet_server=...). Конфіг-dataclass'и читають значення з існуючих `*_config.py` (числа не переносити руками — імпортувати, щоб тюнінг лишився байт-у-байт). `USE_GAZEBO` — одне місце.
+- DetectionServer should own `INTERCEPT_*` thresholds as constructor defaults (currently passed per-call from controller).
+- Consider version-skew tripwire: warn if `matches_percent > 100` arrives with `navigation=False`.
 
 **Крок 8 (опційно, останній).** Прибрати JSON round-trip telnet→CommandHandler (HC-2); розчепити `AltitudeCSVLogger` від форми `get_state()` через плоский снапшот-метод у PID (IE-5).
 

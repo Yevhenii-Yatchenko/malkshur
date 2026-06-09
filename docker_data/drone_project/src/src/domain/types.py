@@ -20,8 +20,9 @@ Both ends of each wire live in this repository:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
@@ -72,10 +73,17 @@ class StabilizerReading:
     def from_payload(cls, payload: Mapping[str, Any]) -> "StabilizerReading":
         """Parse one decoded JSON payload from the :8888 wire.
 
-        Raises ``KeyError`` if a field the producer always sends is missing
-        (the caller treats that as a malformed payload and drops it).
-        ``navigation`` and the target fields are optional by design.
+        Raises ``TypeError`` if the payload is valid JSON but not an object
+        (``null``, a number, a string, an array) and ``KeyError`` if a
+        field the producer always sends is missing -- the caller treats
+        either as a malformed payload and drops it.  ``navigation`` and
+        the target fields are optional by design.
         """
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "stabilizer payload must be a JSON object, "
+                f"got {type(payload).__name__}"
+            )
         target_dx = payload.get("target_dx_pixels")
         target_dy = payload.get("target_dy_pixels")
         return cls(
@@ -109,10 +117,17 @@ class DetectionReading:
     def from_payload(cls, payload: Mapping[str, Any]) -> "DetectionReading":
         """Parse one decoded detection JSON payload.
 
-        Mirrors the defaults the controller historically applied while dict
-        fishing: missing confidence -> 0.0, missing/short direction vector
-        -> zero components.
+        Raises ``TypeError`` if the payload is valid JSON but not an object
+        (the caller treats that as a malformed payload and drops it).
+        Otherwise mirrors the defaults the controller historically applied
+        while dict fishing: missing confidence -> 0.0, missing/short
+        direction vector -> zero components.
         """
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "detection payload must be a JSON object, "
+                f"got {type(payload).__name__}"
+            )
         direction = payload.get("direction_vector", {}).get("direction", [0, 0, 0])
         return cls(
             confidence=float(payload.get("confidence", 0.0)),
