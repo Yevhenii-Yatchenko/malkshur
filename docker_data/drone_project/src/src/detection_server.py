@@ -177,7 +177,7 @@ class DetectionServer:
             if self.get_time_since_last_detection() >= timeout_s:
                 return None
             reading = DetectionReading.from_payload(data)
-        except (TypeError, ValueError, AttributeError) as e:
+        except (TypeError, ValueError, AttributeError, KeyError) as e:
             self.logger.error(f"Dropping malformed detection payload: {e}")
             return None
 

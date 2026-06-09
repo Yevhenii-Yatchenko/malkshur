@@ -118,6 +118,12 @@ class TestGetActiveTargetMalformedPayloads:
                 "confidence": "abc",
                 "direction_vector": {"direction": [0.25, -0.1, 1.0]},
             },
+            # direction is a JSON object -> direction[0] raises KeyError(0)
+            {
+                "class_id": 1,
+                "confidence": 0.9,
+                "direction_vector": {"direction": {"a": 1}},
+            },
             # whole payload not a JSON object (client sent e.g. `5` or `"x"`)
             5,
             "x",
@@ -127,6 +133,7 @@ class TestGetActiveTargetMalformedPayloads:
             "direction_vector-null",
             "direction-not-a-list",
             "confidence-not-a-number",
+            "direction-is-object",
             "payload-int",
             "payload-str",
             "payload-list",
