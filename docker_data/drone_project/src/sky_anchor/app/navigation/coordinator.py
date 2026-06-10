@@ -43,8 +43,8 @@ class NavigationCoordinator:
             Timer(5, lambda: self.set_target(NavigationTarget(dx_pixels = 0, dy_pixels = 0))),
         ]
 
-        # if os.environ.get("TEST_NAVIGATION", "0") != "1":
-        #     self.__command_timers = []
+        if os.environ.get("TEST_NAVIGATION", "0") != "1":
+            self.__command_timers = []
 
         self.__schedule_command()
 

@@ -16,11 +16,12 @@ from typing import Any, Dict, Literal, Optional, Tuple
 
 import numpy as np
 
+from .config.objects import PositionConfig
 from .logger import get_logger
 from .pid_controller import PIDController
 from .position_config import (
-    ALTITUDE_COMPENSATION, ANGLE_PID, COORDINATE_SYSTEM, POSITION_CONTROL, POSITION_FILTERING,
-    POSITION_PID_X, POSITION_PID_Y, PWM_LIMITS)
+    ALTITUDE_COMPENSATION, COORDINATE_SYSTEM, POSITION_CONTROL, POSITION_FILTERING,
+    PWM_LIMITS)
 from .position_csv_logger import PositionCSVLogger
 
 
@@ -37,43 +38,60 @@ class PositionController:
     - CSV logging for analysis
     """
 
-    __mode: Literal['stabilization', 'navigation'] = 'stabilization'
-
     def __init__(self,
-                 start_timestamp: Optional[datetime] = None):
+                 start_timestamp: Optional[datetime] = None,
+                 *,
+                 config: Optional[PositionConfig] = None,
+                 csv_logger=None):
         """
         Initialize position controller with configuration from position_config.
 
         Args:
             start_timestamp: Optional datetime for consistent session naming
+            config: Optional injected PositionConfig (GRASP Step 7, LC-2).
+                If None (default), the configuration is read from the
+                position_config.py dicts exactly as before (same dicts,
+                same values).  Also the source for the mode-switch gain
+                restore in ``__enable_stabilization``.
+            csv_logger: Optional injected CSV logger for control-data logging.
+                If None (default), a file-writing PositionCSVLogger is created
+                exactly as before.
         """
+        if config is None:
+            config = PositionConfig.from_dicts()
+        self.__config = config
+
+        # Mode state, per instance (Step 7 carried bullet: formerly a class
+        # attribute shadowed on the first mode switch).
+        self.__mode: Literal['stabilization', 'navigation'] = 'stabilization'
+
         self.logger = get_logger("position_controller", "logs/position_controller.log")
         # Initialize position PID controllers (outer loop)
         self.position_pid_x = PIDController(
-            kp=POSITION_PID_X['kp'],
-            ki=POSITION_PID_X['ki'],
-            kd=POSITION_PID_X['kd'],
-            output_min=-PWM_LIMITS['max_correction'],
-            output_max=PWM_LIMITS['max_correction'],
+            kp=config.pid_x.kp,
+            ki=config.pid_x.ki,
+            kd=config.pid_x.kd,
+            output_min=-config.max_correction,
+            output_max=config.max_correction,
             integral_limit=100
         )
 
         self.position_pid_y = PIDController(
-            kp=POSITION_PID_Y['kp'],
-            ki=POSITION_PID_Y['ki'],
-            kd=POSITION_PID_Y['kd'],
-            output_min=-PWM_LIMITS['max_correction'],
-            output_max=PWM_LIMITS['max_correction'],
+            kp=config.pid_y.kp,
+            ki=config.pid_y.ki,
+            kd=config.pid_y.kd,
+            output_min=-config.max_correction,
+            output_max=config.max_correction,
             integral_limit=100
         )
 
         # Initialize angle PID controller for yaw
         self.angle_pid = PIDController(
-            kp=ANGLE_PID['kp'],
-            ki=ANGLE_PID['ki'],
-            kd=ANGLE_PID['kd'],
-            output_min=-PWM_LIMITS['max_correction'],
-            output_max=PWM_LIMITS['max_correction'],
+            kp=config.angle_pid.kp,
+            ki=config.angle_pid.ki,
+            kd=config.angle_pid.kd,
+            output_min=-config.max_correction,
+            output_max=config.max_correction,
             integral_limit=30
         )
 
@@ -107,7 +125,9 @@ class PositionController:
         self.navigation_target_dy = 0.0
 
         # CSV logging
-        self.csv_logger = PositionCSVLogger(start_timestamp=start_timestamp)
+        if csv_logger is None:
+            csv_logger = PositionCSVLogger(start_timestamp=start_timestamp)
+        self.csv_logger = csv_logger
 
         # State tracking
         self.is_active = False
@@ -190,11 +210,14 @@ class PositionController:
 
     def __enable_stabilization(self):
         self.logger.info("Enabling stabilization mode")
-        self.position_pid_x.ki = POSITION_PID_X['ki']
-        self.position_pid_x.kd = POSITION_PID_X['kd']
+        # Restore the coefficients from the injected config (GRASP Step 7,
+        # LC-2; formerly read back from the global POSITION_PID_X/Y dicts --
+        # the default config is built from those same dicts).
+        self.position_pid_x.ki = self.__config.pid_x.ki
+        self.position_pid_x.kd = self.__config.pid_x.kd
 
-        self.position_pid_y.ki = POSITION_PID_Y['ki']
-        self.position_pid_y.kd = POSITION_PID_Y['kd']
+        self.position_pid_y.ki = self.__config.pid_y.ki
+        self.position_pid_y.kd = self.__config.pid_y.kd
         self.reset()
 
         self.__mode = 'stabilization'
@@ -207,7 +230,8 @@ class PositionController:
                altitude: float,
                current_time: Optional[float] = None,
                target_dx_pixels: Optional[float] = None,
-               target_dy_pixels: Optional[float] = None) -> Dict[str, Any]:
+               target_dy_pixels: Optional[float] = None,
+               navigation: bool = False) -> Dict[str, Any]:
         """
         Update position controller and return PWM commands.
 
@@ -215,11 +239,21 @@ class PositionController:
             dx_pixels: Horizontal drift in pixels from sky_anchor
             dy_pixels: Vertical drift in pixels from sky_anchor
             angle_deg: Angular drift in degrees
-            confidence: Measurement confidence (0-1, match percentage)
+            confidence: Measurement confidence (0-1, match percentage).
+                Informational only since GRASP Step 4 (logged to CSV, kept
+                in last_confidence); it no longer switches modes.
             altitude: Current altitude in meters for compensation
             current_time: Current time in seconds
             target_dx_pixels: Active navigation target X (pixels), if available
             target_dy_pixels: Active navigation target Y (pixels), if available
+            navigation: Explicit navigation flag from the sky_anchor payload
+                (StabilizerReading.navigation).  True switches to navigation
+                mode (position ki/kd zeroed), False switches back to
+                stabilization mode (ki/kd restored from POSITION_PID_X/Y);
+                each switch resets controller state.  Replaces the former
+                magic ``confidence == 1.01`` sentinel (IE-3).  Defaults to
+                False so callers that never navigate keep the historic
+                stabilization-only behavior.
 
         Returns:
             Dictionary containing:
@@ -229,9 +263,9 @@ class PositionController:
                 - valid: Boolean indicating if commands are valid
                 - debug_info: Dictionary with debug information
         """
-        if confidence == 1.01 and self.__mode != 'navigation':
+        if navigation and self.__mode != 'navigation':
             self.__enable_navigation()
-        elif confidence < 1.0 and self.__mode != 'stabilization':
+        elif not navigation and self.__mode != 'stabilization':
             self.__enable_stabilization()
 
         if current_time is None:

@@ -23,3 +23,6 @@ venv/
 *.onnx
 *.pt
 *.engine
+
+# Golden run artifacts (environment-specific; baseline_stats.json also untracked)
+scripts/golden_runs/

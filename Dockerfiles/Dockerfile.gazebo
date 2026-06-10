@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     libgazebo11-dev \
     x11-apps \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy plugin source for compilation

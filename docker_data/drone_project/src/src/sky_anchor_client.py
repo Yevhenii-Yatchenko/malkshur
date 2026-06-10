@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
 Sky Anchor Client - A non-blocking TCP client to receive data from server
+
+Each JSON line received on the wire is parsed into a typed
+``StabilizerReading`` right at the network edge (GRASP Step 4, IE-2);
+no raw dict ever leaves this module.
 """
 
 import socket
 import json
 import threading
 import time
+from typing import Optional
+
+from src.domain.types import StabilizerReading
 from src.logger import get_logger
 
 class SkyAnchorClient:
@@ -22,7 +29,7 @@ class SkyAnchorClient:
         self.running = False
         self.receive_thread = None
         self.buffer = ""
-        self.__data = None
+        self.__reading: Optional[StabilizerReading] = None
         self.error_message = None
         self._lock = threading.Lock()
 
@@ -71,15 +78,20 @@ class SkyAnchorClient:
                     line, self.buffer = self.buffer.split('\n', 1)
                     if line.strip():
                         try:
-                            data = json.loads(line.strip())
+                            payload = json.loads(line.strip())
+                            reading = StabilizerReading.from_payload(payload)
+                            # Log outside the lock: the 100 Hz consumer
+                            # contends on it, and the logger does file I/O.
+                            self.logger.info(f"data: {reading}")
                             with self._lock:
-                                self.logger.info(f"data: {data}")
-                                self.__data = data
+                                self.__reading = reading
 
                         except json.JSONDecodeError as e:
                             self.logger.error(f"Error parsing JSON: {e}")
-                        except KeyError as e:
-                            self.logger.error(f"Missing data: {e}")
+                        except (KeyError, TypeError, ValueError, AttributeError) as e:
+                            # One bad line must never kill the receive
+                            # thread; drop it and keep consuming.
+                            self.logger.error(f"Malformed payload: {e}")
 
             except socket.timeout:
                 continue
@@ -89,10 +101,13 @@ class SkyAnchorClient:
                     self.connected = False
                 break
 
-    def tick(self):
-        """Get the latest data with blocking"""
+    def tick(self) -> Optional[StabilizerReading]:
+        """Return the latest reading (or None if nothing arrived yet).
+
+        The reading is a frozen dataclass, so no defensive copy is needed.
+        """
         with self._lock:
-            return self.__data.copy() if self.__data else {}
+            return self.__reading
 
     def is_connected(self):
         """Check if client is connected to server"""
