@@ -137,8 +137,6 @@ def build_controller() -> DroneController:
 
     command_handler = CommandHandler(
         logger=logger,
-        telnet_host=TELNET_HOST,
-        telnet_port=TELNET_PORT,
         telnet_server=TelnetServer(host=TELNET_HOST, port=TELNET_PORT),
     )
 

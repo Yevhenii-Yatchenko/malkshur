@@ -146,7 +146,7 @@ class StabilizerManager:
         # (GRASP Step 4) still carries the historic matches_percent
         # placeholder (101.0) but parses with navigation=False -- meaning
         # navigation frames would silently be treated as stabilization
-        # frames.  Warn once per process, never drop the reading.
+        # frames.  Warn once per manager instance, never drop the reading.
         if (not self.__skew_warned
                 and reading.matches_percent > 100
                 and not reading.navigation):

@@ -27,7 +27,10 @@ pytestmark = [pytest.mark.unit, pytest.mark.communication]
 @pytest.fixture
 def telnet_cls():
     """Patch the TelnetServer symbol inside the command_handler module."""
-    with mock.patch("src.command_handler.TelnetServer", autospec=True) as cls:
+    # NOT autospec: the handler reads instance attributes (.host/.port for
+    # the startup log line) that TelnetServer.__init__ creates, which an
+    # autospec mock (spec'd from the class) would not provide.
+    with mock.patch("src.command_handler.TelnetServer") as cls:
         yield cls
 
 
@@ -44,10 +47,6 @@ class TestConstructionSideEffects:
         telnet_cls.assert_called_once_with(host="0.0.0.0", port=2323)
         telnet_cls.return_value.start.assert_called_once_with()
 
-    def test_constructor_forwards_custom_host_and_port(self, telnet_cls):
-        CommandHandler(logger=mock.Mock(), telnet_host="127.0.0.1", telnet_port=4242)
-        telnet_cls.assert_called_once_with(host="127.0.0.1", port=4242)
-
     def test_cleanup_stops_telnet_server(self, telnet_cls, handler):
         handler.cleanup()
         telnet_cls.return_value.stop.assert_called_once_with()
@@ -61,6 +60,18 @@ class TestConstructionSideEffects:
         server.start.assert_called_once_with()
         handler.cleanup()
         server.stop.assert_called_once_with()
+
+    def test_startup_log_derives_from_server_and_is_not_a_duplicate(self):
+        """TelnetServer.start() logs "Telnet server started on ..." itself;
+        the handler's line uses the server's own host/port and is
+        deliberately distinct, so startup is no longer logged twice."""
+        server = mock.Mock()
+        server.host, server.port = "0.0.0.0", 2323
+        logger = mock.Mock()
+        CommandHandler(logger=logger, telnet_server=server)
+        messages = [str(c.args[0]) for c in logger.info.call_args_list]
+        assert "Telnet command processing attached to 0.0.0.0:2323" in messages
+        assert not any("Telnet server started" in m for m in messages)
 
 
 class TestParseMessage:

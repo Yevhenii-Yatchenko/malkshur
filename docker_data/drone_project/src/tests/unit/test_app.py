@@ -52,7 +52,7 @@ def built(monkeypatch):
             mock.patch("src.app.PositionCSVLogger", autospec=True) as pos_csv_cls, \
             mock.patch("src.app.BatteryMonitor", autospec=True) as battery_cls, \
             mock.patch("src.app.SignalHandler", autospec=True) as signal_cls, \
-            mock.patch("src.app.TelnetServer") as telnet_cls:
+            mock.patch("src.app.TelnetServer") as telnet_cls:  # no autospec: instance attr message_queue would break the processing thread
         controller = src.app.build_controller()
         try:
             yield SimpleNamespace(
