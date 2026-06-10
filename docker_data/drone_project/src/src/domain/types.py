@@ -99,6 +99,32 @@ class StabilizerReading:
 
 
 @dataclass(frozen=True)
+class AttitudeSetpoints:
+    """New attitude/altitude intents returned by a flight behavior.
+
+    GRASP Step 5 (HC-1): the extracted flight behaviors
+    (``src/flight/intercept.py``, ``src/flight/stabilization.py``) no longer
+    mutate the controller's RC base attributes directly; they return this
+    value object and ``DroneController`` applies it to its roll/pitch/yaw
+    bases and target altitude (RC ownership moves to RCSetpoints in Step 6).
+
+    - ``roll_pwm`` / ``pitch_pwm`` / ``yaw_pwm``: the new RC base values.
+      Dataclasses do not coerce types, so values flow through exactly as
+      the behaviors produced them (e.g. PositionController's numpy ints) --
+      byte-identical to the former direct attribute assignments.
+    - ``target_altitude``: new altitude target in meters, or ``None`` to
+      leave the controller's current target unchanged (the stabilization
+      behavior never touches it; intercept deactivation leaves it alone
+      when no altitude reading is available).
+    """
+
+    roll_pwm: int
+    pitch_pwm: int
+    yaw_pwm: int
+    target_altitude: Optional[float] = None
+
+
+@dataclass(frozen=True)
 class DetectionReading:
     """One object detection as received from the detection client.
 

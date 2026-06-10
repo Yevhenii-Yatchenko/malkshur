@@ -131,7 +131,7 @@ class StabilizerManager:
         Returns None when not connected, when nothing has arrived yet, or
         when the latest reading was already consumed by a previous call.
         """
-        if not self.__connected:
+        if not self.is_connected:
             return None
 
         try:
@@ -150,7 +150,21 @@ class StabilizerManager:
 
     @property
     def is_connected(self) -> bool:
-        """Check if connected to stabilizer."""
+        """Check if connected to stabilizer, re-synced with client health.
+
+        GRASP Step 5 carried bullet: the manager's flag is flipped True once
+        by the connection thread, but the client's receive thread can die
+        later (server disconnect, receive error).  Without this re-sync the
+        manager would report "connected" forever, silently wedging both the
+        stabilization gate and the post-intercept re-enable.  The drop is
+        one-way and logged once; reconnect handling is intentionally
+        unchanged (none beyond the existing connection thread).
+        """
+        if self.__connected and not self.__client.is_connected():
+            self.__connected = False
+            self.__logger.warning(
+                "Stabilizer client connection lost (receive thread down)"
+            )
         return self.__connected
 
     @property

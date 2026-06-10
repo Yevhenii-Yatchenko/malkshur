@@ -14,6 +14,12 @@ field -- into the data's owner.  Contract pinned here:
   as already consumed -- historic edge kept on purpose);
 - client errors are swallowed (logged) and surface as None.
 
+Step 5 carried bullet (client health re-sync): is_connected/poll_new()
+must reflect the CLIENT's health -- a dead receive thread
+(client.is_connected() False) drops the manager's connected flag instead
+of reporting "connected" forever.  The drop is one-way (no hidden
+reconnect; reconnecting remains the connection thread's job).
+
 StabilizerManager still constructs its own SkyAnchorClient (LC-3 is a
 Step 7 concern), so the class is patched in the module namespace and the
 connected flag is set through the name-mangled attribute.
@@ -44,6 +50,8 @@ def manager_and_client():
         )
     client = client_cls.return_value
     client.tick.return_value = None
+    # Healthy receive thread unless a test says otherwise (Step 5 re-sync).
+    client.is_connected.return_value = True
     # Connection state is normally flipped by the background connect thread;
     # set it directly until Step 7 makes the client injectable.
     manager._StabilizerManager__connected = True
@@ -92,3 +100,50 @@ class TestPollNew:
         manager, client = manager_and_client
         client.tick.side_effect = RuntimeError("socket exploded")
         assert manager.poll_new() is None
+
+
+class TestClientHealthResync:
+    """Step 5 carried bullet: a dead client receive thread must surface."""
+
+    def test_healthy_client_keeps_manager_connected(self, manager_and_client):
+        manager, client = manager_and_client
+        assert manager.is_connected is True
+        reading = make_reading(timestamp=10.0)
+        client.tick.return_value = reading
+        assert manager.poll_new() is reading
+
+    def test_dead_client_drops_is_connected(self, manager_and_client):
+        manager, client = manager_and_client
+        client.is_connected.return_value = False
+        assert manager.is_connected is False
+
+    def test_dead_client_makes_poll_new_return_none_without_polling(
+        self, manager_and_client
+    ):
+        manager, client = manager_and_client
+        client.is_connected.return_value = False
+        client.tick.return_value = make_reading(timestamp=10.0)
+        assert manager.poll_new() is None
+        client.tick.assert_not_called()
+
+    def test_drop_is_one_way_with_no_hidden_reconnect(self, manager_and_client):
+        """Once dropped, the flag stays down even if the client claims
+        health again -- reconnecting is the connection thread's job, which
+        re-sync deliberately does not replicate."""
+        manager, client = manager_and_client
+        client.is_connected.return_value = False
+        assert manager.is_connected is False
+        client.is_connected.return_value = True
+        assert manager.is_connected is False
+        assert manager.poll_new() is None
+
+    def test_client_health_is_not_queried_before_first_connect(
+        self, manager_and_client
+    ):
+        """The re-sync only ever downgrades an established connection: a
+        manager that never connected short-circuits without touching the
+        client."""
+        manager, client = manager_and_client
+        manager._StabilizerManager__connected = False
+        assert manager.is_connected is False
+        client.is_connected.assert_not_called()

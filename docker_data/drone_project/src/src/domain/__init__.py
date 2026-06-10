@@ -5,6 +5,6 @@ between the network edges (sky_anchor TCP :8888, detection TCP server) and
 the control logic.
 """
 
-from src.domain.types import DetectionReading, StabilizerReading
+from src.domain.types import AttitudeSetpoints, DetectionReading, StabilizerReading
 
-__all__ = ["DetectionReading", "StabilizerReading"]
+__all__ = ["AttitudeSetpoints", "DetectionReading", "StabilizerReading"]

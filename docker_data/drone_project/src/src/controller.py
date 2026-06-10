@@ -20,14 +20,9 @@ from src.detection_client import DockerDetectionClient
 from src.detection_config import (
     INTERCEPT_CONFIDENCE_THRESHOLD,
     INTERCEPT_TIMEOUT_SECONDS,
-    INTERCEPT_DEADBAND_X,
-    INTERCEPT_DEADBAND_Y,
-    INTERCEPT_YAW_GAIN,
-    INTERCEPT_ALTITUDE_STEP,
-    INTERCEPT_PITCH_OFFSET,
-    INTERCEPT_ROLL_NEUTRAL,
-    PWM_NEUTRAL,
 )
+from src.flight.intercept import InterceptGuidance
+from src.flight.stabilization import StabilizationBehavior
 
 
 class DroneController:
@@ -41,9 +36,6 @@ class DroneController:
     __is_up = False
 
     __throttle_base = 1000
-
-    # Intercept mode state
-    __intercept_mode = False
 
     def __set_throttle_base(self, value):
         """Set throttle base with upper limit enforcement."""
@@ -83,6 +75,19 @@ class DroneController:
         # Detection system (object recognition)
         self.__detection_server = DetectionServer(logger=self.logger)
         self.__detection_client = DockerDetectionClient(logger=self.logger)
+
+        # Flight behaviors extracted from __updateThrottle (GRASP Step 5):
+        # the intercept state machine and the vision stabilization branch.
+        # Plain construction here until the Step 7 composition root.
+        self.__intercept_guidance = InterceptGuidance(
+            detection_server=self.__detection_server,
+            stabilizer=self.__stabilizer,
+            logger=self.logger,
+        )
+        self.__stabilization = StabilizationBehavior(
+            stabilizer=self.__stabilizer,
+            position_controller=self.__position_controller,
+        )
 
         self.signal_handler = SignalHandler()
 
@@ -250,9 +255,7 @@ class DroneController:
                 self.__detection_server.stop()
 
             # Exit intercept mode
-            if self.__intercept_mode:
-                self.logger.info("Exiting intercept mode")
-                self.__intercept_mode = False
+            self.__intercept_guidance.exit_intercept()
 
             # Disarm drone
             self.__mavlink.disarm()
@@ -290,120 +293,53 @@ class DroneController:
         self.logger.info(f"Landing from {current_altitude:.2f}m")
 
     def __updateThrottle(self):
+        """Thin orchestrator (GRASP Step 5): pick a flight behavior, apply
+        the setpoints it returns, then run altitude control and send RC."""
         current_altitude = self.__get_current_altitude()
 
-        # Check for intercept mode (target recognition)
+        # Check for intercept mode (target recognition).  Data validity is
+        # the detection server's call; the state machine lives in
+        # InterceptGuidance; the running check stays here.
         if self.__detection_server.is_running():
-            # Data validity (staleness, confidence floor, direction-vector
-            # extraction) is decided by the detection server; the intercept
-            # state machine itself stays here.
             target = self.__detection_server.get_active_target(
                 timeout_s=INTERCEPT_TIMEOUT_SECONDS,
                 min_confidence=INTERCEPT_CONFIDENCE_THRESHOLD,
             )
-
+            setpoints = self.__intercept_guidance.update(
+                target=target,
+                current_altitude=current_altitude,
+                target_altitude=self.__target_altitude,
+            )
+            if setpoints is not None:
+                self.__apply_setpoints(setpoints)
             if target is not None:
-                # High confidence detection - enter intercept mode
-                if not self.__intercept_mode:
-                    self.logger.warning(f"INTERCEPT MODE ACTIVATED (confidence: {target.confidence:.2%})")
-                    self.__intercept_mode = True
-                    self.__intercept_start_altitude = current_altitude
-                    # Disable stabilization during intercept
-                    # (stabilizer keeps running but we ignore its output)
-
-                dir_x = target.dir_x  # Horizontal (-0.5 to 0.5)
-                dir_y = target.dir_y  # Vertical (-0.5 to 0.5)
-
-                # YAW control (centering horizontally)
-                if abs(dir_x) > INTERCEPT_DEADBAND_X:
-                    # Positive dir_x = target is right, need to yaw right
-                    yaw_correction = int(dir_x * INTERCEPT_YAW_GAIN)
-                    self.__yaw_base = PWM_NEUTRAL + yaw_correction
-                else:
-                    self.__yaw_base = PWM_NEUTRAL  # Centered
-
-                # ALTITUDE control (centering vertically)
-                if abs(dir_y) > INTERCEPT_DEADBAND_Y:
-                    # Positive dir_y = target is above, need to climb
-                    altitude_correction = dir_y * INTERCEPT_ALTITUDE_STEP
-                    self.__target_altitude += altitude_correction
-                    self.logger.debug(f"Altitude adjustment: {altitude_correction:+.2f}m -> {self.__target_altitude:.2f}m")
-
-                # PITCH control (move forward toward target)
-                self.__pitch_base = PWM_NEUTRAL + INTERCEPT_PITCH_OFFSET
-
-                # ROLL neutral (no lateral movement)
-                self.__roll_base = INTERCEPT_ROLL_NEUTRAL
-
-                self.logger.debug(
-                    f"Intercept: conf={target.confidence:.2%}, dir_x={dir_x:+.3f}, dir_y={dir_y:+.3f}, "
-                    f"yaw={self.__yaw_base}, pitch={self.__pitch_base}"
-                )
-
-                # Skip stabilization logic below
-                # Continue to altitude control at the end
-                if current_altitude is None:
-                    self.logger.error("No valid altitude reading! Maintaining current throttle.")
-                    self.__set_rc_channel_pwm()
-                    return
-
-                try:
-                    new_throttle = self.__altitude_controller.update(
-                        target_altitude=self.__target_altitude,
-                        current_altitude=current_altitude
-                    )
-                    self.__set_throttle_base(new_throttle)
-                    self.__set_rc_channel_pwm()
-                except Exception as e:
-                    self.logger.error(f"Error in altitude control: {e}")
-
-                return  # Exit early, skip stabilization
-
-            # No recent detection or low confidence
-            if (self.__intercept_mode
-                    and self.__detection_server.get_time_since_last_detection()
-                    >= INTERCEPT_TIMEOUT_SECONDS):
-                self.logger.warning(
-                    f"INTERCEPT MODE DEACTIVATED (no detection for {INTERCEPT_TIMEOUT_SECONDS}s)"
-                )
-                self.__intercept_mode = False
-                # Stop forward movement
-                self.__pitch_base = PWM_NEUTRAL
-                self.__roll_base = PWM_NEUTRAL
-                self.__yaw_base = PWM_NEUTRAL
-                # Fix altitude at current position
-                if current_altitude is not None:
-                    self.__target_altitude = current_altitude
-                    self.logger.info(f"Holding altitude at {current_altitude:.2f}m")
-                # Re-enable stabilization
-                if not self.__stabilizer.is_connected:
-                    self.logger.info("Re-enabling stabilization after intercept")
-                    self._stabilize([])
+                # Active intercept: skip stabilization, go straight to
+                # altitude control.
+                self.__run_altitude_control(current_altitude)
+                return
 
         # Normal stabilization mode (if not intercepting)
-        if self.__stabilizer.is_connected and not self.__intercept_mode:
-            # poll_new() returns each reading at most once (timestamp
-            # de-duplication is owned by the StabilizerManager).
-            reading = self.__stabilizer.poll_new()
-            if reading:
-                pid_output = self.__position_controller.update(
-                    dx_pixels=reading.dx,
-                    dy_pixels=reading.dy,
-                    angle_deg=0,
-                    confidence=reading.confidence,
-                    altitude=current_altitude,
-                    target_dx_pixels=reading.target_dx_pixels,
-                    target_dy_pixels=reading.target_dy_pixels,
-                    navigation=reading.navigation,
-                )
+        setpoints = self.__stabilization.update(
+            current_altitude=current_altitude,
+            target_altitude=self.__target_altitude,
+            intercept_active=self.__intercept_guidance.is_intercepting,
+        )
+        if setpoints is not None:
+            self.__apply_setpoints(setpoints)
 
-                self.__roll_base = pid_output['roll_pwm']
-                self.__pitch_base = pid_output['pitch_pwm']
-                self.__yaw_base = pid_output['yaw_pwm']
-        else:
-            if current_altitude is not None and abs(current_altitude - self.__target_altitude) < 0.1:
-                self._stabilize([])
+        self.__run_altitude_control(current_altitude)
 
+    def __apply_setpoints(self, setpoints):
+        """Apply a behavior's AttitudeSetpoints to the RC bases (and the
+        altitude target, unless the behavior left it as None)."""
+        self.__roll_base = setpoints.roll_pwm
+        self.__pitch_base = setpoints.pitch_pwm
+        self.__yaw_base = setpoints.yaw_pwm
+        if setpoints.target_altitude is not None:
+            self.__target_altitude = setpoints.target_altitude
+
+    def __run_altitude_control(self, current_altitude):
+        """Altitude PID -> throttle base -> RC override send."""
         if current_altitude is None:
             self.logger.error("No valid altitude reading! Maintaining current throttle.")
             self.__set_rc_channel_pwm()
