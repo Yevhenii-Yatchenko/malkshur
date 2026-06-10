@@ -19,15 +19,28 @@ pinned here against the resolved src/detection_config.py values:
 - timeout deactivation: only while the mode is active AND
   get_time_since_last_detection() >= INTERCEPT_TIMEOUT_SECONDS (the time
   query short-circuits when the mode is inactive, exactly like the former
-  inline ``and``); deactivation returns neutral attitude, holds altitude at
-  the current reading (or leaves the target unchanged when there is no
-  reading), and re-enables stabilization via the manager IF it is not
-  connected (the handoff);
+  inline ``and``); deactivation returns neutral attitude and holds altitude
+  at the current reading (or leaves the target unchanged when there is no
+  reading);
 - exit_intercept(): the disarm path, log + flag reset only when active.
 
-Collaborators (detection server for the staleness query, stabilizer manager
-for the handoff, the controller's logger) are constructor-injected, so the
-tests drive them as mocks; there is no controller import anywhere.
+Step 6 (review absorption): update() returns a frozen InterceptResult
+instead of Optional[AttitudeSetpoints]:
+
+- ``active`` is the controller's skip-stabilization gate -- True exactly
+  when a target drove corrections this iteration (the former
+  ``target is not None`` re-derivation), False on the deactivation
+  iteration and in limbo even though ``is_intercepting`` may stay True;
+- ``reenable_stabilization`` replaces the in-update side effect: the
+  guidance no longer holds a StabilizerManager at all; the deactivation
+  iteration raises the intent and DroneController.__updateThrottle performs
+  the actual ``if not stabilizer.is_connected: start_stabilizer_process()``
+  synchronously right after update() (so the is_connected check still
+  happens at deactivation time).
+
+Collaborators (detection server for the staleness query, the controller's
+logger) are constructor-injected, so the tests drive them as mocks; there
+is no controller import anywhere.
 """
 
 from unittest import mock
@@ -45,7 +58,7 @@ from src.detection_config import (
     PWM_NEUTRAL,
 )
 from src.domain.types import AttitudeSetpoints, DetectionReading
-from src.flight.intercept import InterceptGuidance
+from src.flight.intercept import InterceptGuidance, InterceptResult
 
 pytestmark = [pytest.mark.unit]
 
@@ -58,15 +71,11 @@ def reading(confidence=0.9, dir_x=0.0, dir_y=0.0):
 def env():
     detection_server = mock.Mock()
     detection_server.get_time_since_last_detection.return_value = 0.0
-    stabilizer = mock.Mock()
-    # Plain attribute: InterceptGuidance reads ``is_connected`` (a property
-    # on the real StabilizerManager) without calling it.
-    stabilizer.is_connected = True
     logger = mock.Mock()
     guidance = InterceptGuidance(
-        detection_server=detection_server, stabilizer=stabilizer, logger=logger
+        detection_server=detection_server, logger=logger
     )
-    return guidance, detection_server, stabilizer, logger
+    return guidance, detection_server, logger
 
 
 class TestConfigAssumptions:
@@ -86,24 +95,27 @@ class TestConfigAssumptions:
 
 class TestActivation:
     def test_starts_outside_intercept_mode(self, env):
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         assert guidance.is_intercepting is False
 
     def test_target_activates_intercept_mode(self, env):
-        guidance, _, _, logger = env
+        guidance, _, logger = env
         result = guidance.update(
             target=reading(confidence=0.9),
             current_altitude=5.0,
             target_altitude=5.0,
         )
         assert guidance.is_intercepting is True
-        assert isinstance(result, AttitudeSetpoints)
+        assert isinstance(result, InterceptResult)
+        assert isinstance(result.setpoints, AttitudeSetpoints)
+        assert result.active is True
+        assert result.reenable_stabilization is False
         logger.warning.assert_called_once_with(
             "INTERCEPT MODE ACTIVATED (confidence: 90.00%)"
         )
 
     def test_activation_logs_once_while_mode_stays_active(self, env):
-        guidance, _, _, logger = env
+        guidance, _, logger = env
         for step in range(3):
             guidance.update(
                 target=reading(), current_altitude=5.0, target_altitude=5.0
@@ -115,7 +127,7 @@ class TestActivation:
         (>= INTERCEPT_CONFIDENCE_THRESHOLD, pinned in
         test_detection_server.py); the guidance trusts whatever reading it
         receives -- exactly like the former inline branch did."""
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         guidance.update(
             target=reading(confidence=0.01),
             current_altitude=5.0,
@@ -124,22 +136,65 @@ class TestActivation:
         assert guidance.is_intercepting is True
 
     def test_no_target_never_activates(self, env):
-        guidance, _, _, _ = env
-        assert guidance.update(
+        guidance, _, _ = env
+        result = guidance.update(
             target=None, current_altitude=5.0, target_altitude=5.0
-        ) is None
+        )
+        assert result == InterceptResult(
+            setpoints=None, active=False, reenable_stabilization=False
+        )
         assert guidance.is_intercepting is False
+
+
+class TestActiveGate:
+    """``active`` is the controller's skip-stabilization gate: it must equal
+    the former ``target is not None`` condition, NOT the mode flag."""
+
+    def test_active_true_on_every_target_iteration(self, env):
+        guidance, _, _ = env
+        for _ in range(3):
+            result = guidance.update(
+                target=reading(), current_altitude=5.0, target_altitude=5.0
+            )
+            assert result.active is True
+
+    def test_limbo_is_not_active_even_though_mode_flag_stays_set(self, env):
+        """Fresh-gap limbo: the old controller fell through to the
+        stabilization branch here (its gate was on the target, not the
+        mode), so active must be False while is_intercepting stays True."""
+        guidance, detection_server, _ = env
+        guidance.update(target=reading(), current_altitude=5.0, target_altitude=5.0)
+        detection_server.get_time_since_last_detection.return_value = 1.0
+        result = guidance.update(
+            target=None, current_altitude=5.0, target_altitude=5.0
+        )
+        assert result.active is False
+        assert guidance.is_intercepting is True
+
+    def test_deactivation_iteration_is_not_active_despite_setpoints(self, env):
+        """The deactivation iteration produces setpoints but the old
+        controller still ran its normal stabilization pass afterwards --
+        active must be False even though setpoints is not None (the two are
+        deliberately independent fields)."""
+        guidance, detection_server, _ = env
+        guidance.update(target=reading(), current_altitude=5.0, target_altitude=5.0)
+        detection_server.get_time_since_last_detection.return_value = 10.0
+        result = guidance.update(
+            target=None, current_altitude=5.0, target_altitude=5.0
+        )
+        assert result.setpoints is not None
+        assert result.active is False
 
 
 class TestYawCorrection:
     def _yaw(self, env, dir_x):
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         result = guidance.update(
             target=reading(dir_x=dir_x),
             current_altitude=5.0,
             target_altitude=5.0,
         )
-        return result.yaw_pwm
+        return result.setpoints.yaw_pwm
 
     @pytest.mark.parametrize(
         "dir_x, expected_yaw",
@@ -169,13 +224,13 @@ class TestYawCorrection:
 
 class TestAltitudeStepping:
     def _target_altitude(self, env, dir_y, target_altitude=5.0):
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         result = guidance.update(
             target=reading(dir_y=dir_y),
             current_altitude=5.0,
             target_altitude=target_altitude,
         )
-        return result.target_altitude
+        return result.setpoints.target_altitude
 
     def test_positive_dir_y_steps_target_up(self, env):
         # 5.0 + 0.5 * 0.01
@@ -194,7 +249,7 @@ class TestAltitudeStepping:
     def test_steps_accumulate_across_iterations_via_feedback(self, env):
         """The controller feeds the returned target back in on the next
         loop, so a persistent offset climbs one step per iteration."""
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         target = 5.0
         seen = []
         for _ in range(3):
@@ -203,7 +258,7 @@ class TestAltitudeStepping:
                 current_altitude=5.0,
                 target_altitude=target,
             )
-            target = result.target_altitude
+            target = result.setpoints.target_altitude
             seen.append(target)
         assert seen == pytest.approx([5.005, 5.010, 5.015])
 
@@ -218,39 +273,43 @@ class TestPitchAndRoll:
     ):
         """No deadband on pitch/roll: forward pitch offset and neutral roll
         are commanded on EVERY active-target iteration."""
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         result = guidance.update(
             target=reading(dir_x=dir_x, dir_y=dir_y),
             current_altitude=5.0,
             target_altitude=5.0,
         )
-        assert result.pitch_pwm == PWM_NEUTRAL + INTERCEPT_PITCH_OFFSET == 1520
-        assert result.roll_pwm == INTERCEPT_ROLL_NEUTRAL == 1500
+        setpoints = result.setpoints
+        assert setpoints.pitch_pwm == PWM_NEUTRAL + INTERCEPT_PITCH_OFFSET == 1520
+        assert setpoints.roll_pwm == INTERCEPT_ROLL_NEUTRAL == 1500
 
 
 class TestTimeoutDeactivation:
     def _activate(self, env):
-        guidance, _, _, _ = env
+        guidance, _, _ = env
         guidance.update(target=reading(), current_altitude=5.0, target_altitude=5.0)
         assert guidance.is_intercepting
 
     def test_staleness_is_not_queried_while_mode_inactive(self, env):
         """Short-circuit pin: the former inline ``and`` only consulted
         get_time_since_last_detection() when the mode was active."""
-        guidance, detection_server, _, _ = env
+        guidance, detection_server, _ = env
         guidance.update(target=None, current_altitude=5.0, target_altitude=5.0)
         detection_server.get_time_since_last_detection.assert_not_called()
 
-    def test_fresh_gap_keeps_mode_active_and_returns_none(self, env):
+    def test_fresh_gap_keeps_mode_active_and_returns_idle_result(self, env):
         """The 'limbo' state: detections paused (or low-confidence ones
         still arriving) but the timeout not yet elapsed -> the mode stays
-        active and no setpoints are produced."""
+        active and no setpoints/intents are produced."""
         self._activate(env)
-        guidance, detection_server, _, _ = env
+        guidance, detection_server, _ = env
         detection_server.get_time_since_last_detection.return_value = 2.999
-        assert guidance.update(
+        result = guidance.update(
             target=None, current_altitude=5.0, target_altitude=5.0
-        ) is None
+        )
+        assert result == InterceptResult(
+            setpoints=None, active=False, reenable_stabilization=False
+        )
         assert guidance.is_intercepting is True
 
     @pytest.mark.parametrize("age", [3.0, 4.5, float("inf")])
@@ -261,17 +320,21 @@ class TestTimeoutDeactivation:
         get_time_since_last_detection returns when nothing was ever
         received."""
         self._activate(env)
-        guidance, detection_server, _, logger = env
+        guidance, detection_server, logger = env
         detection_server.get_time_since_last_detection.return_value = age
         result = guidance.update(
             target=None, current_altitude=4.2, target_altitude=5.0
         )
         assert guidance.is_intercepting is False
-        assert result == AttitudeSetpoints(
-            roll_pwm=PWM_NEUTRAL,
-            pitch_pwm=PWM_NEUTRAL,
-            yaw_pwm=PWM_NEUTRAL,
-            target_altitude=4.2,
+        assert result == InterceptResult(
+            setpoints=AttitudeSetpoints(
+                roll_pwm=PWM_NEUTRAL,
+                pitch_pwm=PWM_NEUTRAL,
+                yaw_pwm=PWM_NEUTRAL,
+                target_altitude=4.2,
+            ),
+            active=False,
+            reenable_stabilization=True,
         )
         logger.warning.assert_called_with(
             "INTERCEPT MODE DEACTIVATED (no detection for 3.0s)"
@@ -282,13 +345,14 @@ class TestTimeoutDeactivation:
         self, env
     ):
         self._activate(env)
-        guidance, detection_server, _, logger = env
+        guidance, detection_server, logger = env
         detection_server.get_time_since_last_detection.return_value = 10.0
         result = guidance.update(
             target=None, current_altitude=None, target_altitude=5.0
         )
         # None target altitude == "leave the controller's target as is".
-        assert result.target_altitude is None
+        assert result.setpoints.target_altitude is None
+        assert result.reenable_stabilization is True
         assert not any(
             "Holding altitude" in str(call)
             for call in logger.info.call_args_list
@@ -296,46 +360,67 @@ class TestTimeoutDeactivation:
 
     def test_deactivation_happens_once(self, env):
         self._activate(env)
-        guidance, detection_server, _, _ = env
+        guidance, detection_server, _ = env
         detection_server.get_time_since_last_detection.return_value = 10.0
-        assert guidance.update(
+        first = guidance.update(
             target=None, current_altitude=5.0, target_altitude=5.0
-        ) is not None
+        )
+        assert first.setpoints is not None
+        assert first.reenable_stabilization is True
         # Mode is now inactive: further no-target updates are inert.
-        assert guidance.update(
+        second = guidance.update(
             target=None, current_altitude=5.0, target_altitude=5.0
-        ) is None
+        )
+        assert second == InterceptResult(
+            setpoints=None, active=False, reenable_stabilization=False
+        )
 
 
-class TestStabilizationReenableHandoff:
-    def _deactivate(self, env, connected):
-        guidance, detection_server, stabilizer, _ = env
-        stabilizer.is_connected = connected
-        guidance.update(target=reading(), current_altitude=5.0, target_altitude=5.0)
+class TestReenableStabilizationIntent:
+    """Step 6: the re-enable handoff is an intent, not a side effect.  The
+    guidance no longer touches a StabilizerManager; the actual
+    ``if not is_connected: start_stabilizer_process()`` (and its log line)
+    lives in DroneController.__updateThrottle, executed synchronously right
+    after update() on the same iteration."""
+
+    def test_only_the_deactivation_iteration_raises_the_intent(self, env):
+        guidance, detection_server, _ = env
+        # Activation iteration: no intent.
+        result = guidance.update(
+            target=reading(), current_altitude=5.0, target_altitude=5.0
+        )
+        assert result.reenable_stabilization is False
+        # Limbo iteration: no intent.
+        detection_server.get_time_since_last_detection.return_value = 1.0
+        result = guidance.update(
+            target=None, current_altitude=5.0, target_altitude=5.0
+        )
+        assert result.reenable_stabilization is False
+        # Deactivation iteration: intent raised exactly once.
         detection_server.get_time_since_last_detection.return_value = 10.0
-        return guidance.update(
+        result = guidance.update(
             target=None, current_altitude=5.0, target_altitude=5.0
         )
-
-    def test_deactivation_restarts_stabilization_when_not_connected(self, env):
-        _, _, stabilizer, logger = env
-        self._deactivate(env, connected=False)
-        stabilizer.start_stabilizer_process.assert_called_once_with()
-        logger.info.assert_any_call("Re-enabling stabilization after intercept")
-
-    def test_deactivation_leaves_connected_stabilizer_alone(self, env):
-        _, _, stabilizer, logger = env
-        self._deactivate(env, connected=True)
-        stabilizer.start_stabilizer_process.assert_not_called()
-        assert not any(
-            "Re-enabling stabilization" in str(call)
-            for call in logger.info.call_args_list
+        assert result.reenable_stabilization is True
+        # Inert afterwards.
+        result = guidance.update(
+            target=None, current_altitude=5.0, target_altitude=5.0
         )
+        assert result.reenable_stabilization is False
+
+    def test_result_is_immutable(self, env):
+        """Frozen value object: the controller cannot mutate the intents."""
+        guidance, _, _ = env
+        result = guidance.update(
+            target=reading(), current_altitude=5.0, target_altitude=5.0
+        )
+        with pytest.raises(Exception):
+            result.active = False
 
 
 class TestExitIntercept:
     def test_exit_while_active_resets_flag_and_logs(self, env):
-        guidance, _, _, logger = env
+        guidance, _, logger = env
         guidance.update(target=reading(), current_altitude=5.0, target_altitude=5.0)
         guidance.exit_intercept()
         assert guidance.is_intercepting is False
@@ -344,7 +429,7 @@ class TestExitIntercept:
     def test_exit_while_inactive_is_a_no_op(self, env):
         """Mirrors the disarm handler's former ``if self.__intercept_mode``
         guard: no log line when there was nothing to exit."""
-        guidance, _, _, logger = env
+        guidance, _, logger = env
         guidance.exit_intercept()
         assert guidance.is_intercepting is False
         logger.info.assert_not_called()
@@ -353,10 +438,9 @@ class TestExitIntercept:
 class TestScriptedSequence:
     def test_full_intercept_lifecycle(self, env):
         """Activation -> corrections -> loss (limbo) -> timeout deactivation
-        with handoff -> reactivation, with the altitude target fed back
-        exactly like the controller's loop does."""
-        guidance, detection_server, stabilizer, _ = env
-        stabilizer.is_connected = False
+        with the re-enable intent -> reactivation, with the altitude target
+        fed back exactly like the controller's loop does."""
+        guidance, detection_server, _ = env
         target_altitude = 5.0
 
         # 1) Target appears right of center and above: activate + correct.
@@ -365,11 +449,13 @@ class TestScriptedSequence:
             current_altitude=5.0,
             target_altitude=target_altitude,
         )
-        target_altitude = result.target_altitude
+        setpoints = result.setpoints
+        target_altitude = setpoints.target_altitude
         assert guidance.is_intercepting is True
-        assert result.yaw_pwm == 1530          # 1500 + int(0.3 * 100)
-        assert result.pitch_pwm == 1520        # forward offset
-        assert result.roll_pwm == 1500
+        assert result.active is True
+        assert setpoints.yaw_pwm == 1530       # 1500 + int(0.3 * 100)
+        assert setpoints.pitch_pwm == 1520     # forward offset
+        assert setpoints.roll_pwm == 1500
         assert target_altitude == pytest.approx(5.005)
 
         # 2) Target centered within both deadbands: hold attitude/altitude.
@@ -378,33 +464,38 @@ class TestScriptedSequence:
             current_altitude=5.0,
             target_altitude=target_altitude,
         )
-        target_altitude = result.target_altitude
-        assert (result.roll_pwm, result.pitch_pwm, result.yaw_pwm) == (
+        setpoints = result.setpoints
+        target_altitude = setpoints.target_altitude
+        assert (setpoints.roll_pwm, setpoints.pitch_pwm, setpoints.yaw_pwm) == (
             1500, 1520, 1500,
         )
         assert target_altitude == pytest.approx(5.005)
 
         # 3) Detections stop; gap below the timeout keeps the mode active.
         detection_server.get_time_since_last_detection.return_value = 1.0
-        assert guidance.update(
+        result = guidance.update(
             target=None, current_altitude=5.1, target_altitude=target_altitude
-        ) is None
+        )
+        assert result == InterceptResult(
+            setpoints=None, active=False, reenable_stabilization=False
+        )
         assert guidance.is_intercepting is True
-        stabilizer.start_stabilizer_process.assert_not_called()
 
-        # 4) Timeout: neutral attitude, hold current altitude, handoff.
+        # 4) Timeout: neutral attitude, hold current altitude, intent up.
         detection_server.get_time_since_last_detection.return_value = 3.0
         result = guidance.update(
             target=None, current_altitude=5.1, target_altitude=target_altitude
         )
-        if result.target_altitude is not None:
-            target_altitude = result.target_altitude
+        setpoints = result.setpoints
+        if setpoints.target_altitude is not None:
+            target_altitude = setpoints.target_altitude
         assert guidance.is_intercepting is False
-        assert (result.roll_pwm, result.pitch_pwm, result.yaw_pwm) == (
+        assert result.active is False
+        assert result.reenable_stabilization is True
+        assert (setpoints.roll_pwm, setpoints.pitch_pwm, setpoints.yaw_pwm) == (
             1500, 1500, 1500,
         )
         assert target_altitude == pytest.approx(5.1)
-        stabilizer.start_stabilizer_process.assert_called_once_with()
 
         # 5) A new target reactivates from scratch.
         result = guidance.update(
@@ -413,4 +504,5 @@ class TestScriptedSequence:
             target_altitude=target_altitude,
         )
         assert guidance.is_intercepting is True
-        assert result.yaw_pwm == 1480          # 1500 + int(-0.2 * 100)
+        assert result.active is True
+        assert result.setpoints.yaw_pwm == 1480  # 1500 + int(-0.2 * 100)

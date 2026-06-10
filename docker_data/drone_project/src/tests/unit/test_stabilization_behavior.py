@@ -25,6 +25,10 @@ NullCSVLogger injected, Step 3) -- only the I/O edges (stabilizer manager,
 file loggers, subprocess spawn) are test doubles.  The PWM literals follow
 the same pure-proportional reasoning as test_position_controller.py:
 navigation mode zeroes ki/kd, so outputs are time-independent P terms.
+
+Step 6 (review absorption): ``intercept_active`` lost its ``False`` default
+(it existed for test ergonomics only), so every call site here passes the
+gate input explicitly, exactly like the controller does.
 """
 
 from unittest import mock
@@ -79,7 +83,9 @@ class TestGate:
         self, behavior, stabilizer, position_controller
     ):
         stabilizer.is_connected = False
-        assert behavior.update(current_altitude=2.0, target_altitude=5.0) is None
+        assert behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        ) is None
         stabilizer.poll_new.assert_not_called()
         assert position_controller.update_count == 0
 
@@ -98,7 +104,9 @@ class TestGate:
         self, behavior, stabilizer, position_controller
     ):
         stabilizer.poll_new.return_value = None
-        assert behavior.update(current_altitude=2.0, target_altitude=5.0) is None
+        assert behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        ) is None
         stabilizer.poll_new.assert_called_once_with()
         assert position_controller.update_count == 0
 
@@ -110,7 +118,9 @@ class TestReadingPassthrough:
         """Real math: zero pixel error -> zero P/I/D on every axis ->
         exactly neutral PWM, independent of wall-clock dt."""
         stabilizer.poll_new.return_value = make_reading(dx=0.0, dy=0.0)
-        result = behavior.update(current_altitude=2.0, target_altitude=5.0)
+        result = behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
         assert result == AttitudeSetpoints(
             roll_pwm=PWM_LIMITS["neutral"],
             pitch_pwm=PWM_LIMITS["neutral"],
@@ -138,7 +148,9 @@ class TestReadingPassthrough:
             target_dx=42.0, target_dy=-17.0,
         )
 
-        result = behavior.update(current_altitude=4.5, target_altitude=5.0)
+        result = behavior.update(
+            current_altitude=4.5, target_altitude=5.0, intercept_active=False
+        )
 
         assert len(recorded) == 1
         kwargs, output = recorded[0]
@@ -169,12 +181,16 @@ class TestReadingPassthrough:
         stabilizer.poll_new.return_value = make_reading(
             navigation=True, timestamp=1.0
         )
-        behavior.update(current_altitude=2.0, target_altitude=5.0)
+        behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
 
         stabilizer.poll_new.return_value = make_reading(
             dx=-20.0, dy=10.0, navigation=True, timestamp=2.0
         )
-        result = behavior.update(current_altitude=2.0, target_altitude=5.0)
+        result = behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
 
         expected_roll = int(PWM_LIMITS["neutral"] + POSITION_PID_X["kp"] * -20.0)
         expected_pitch = int(PWM_LIMITS["neutral"] + POSITION_PID_Y["kp"] * 10.0)
@@ -196,7 +212,9 @@ class TestNavigationFlagPropagation:
         stabilizer.poll_new.return_value = make_reading(
             navigation=True, matches=101.0, timestamp=1.0
         )
-        behavior.update(current_altitude=2.0, target_altitude=5.0)
+        behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
         assert position_controller.position_pid_x.ki == 0.0
         assert position_controller.position_pid_x.kd == 0.0
         assert position_controller.position_pid_y.ki == 0.0
@@ -208,11 +226,15 @@ class TestNavigationFlagPropagation:
         stabilizer.poll_new.return_value = make_reading(
             navigation=True, timestamp=1.0
         )
-        behavior.update(current_altitude=2.0, target_altitude=5.0)
+        behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
         stabilizer.poll_new.return_value = make_reading(
             navigation=False, timestamp=2.0
         )
-        behavior.update(current_altitude=2.0, target_altitude=5.0)
+        behavior.update(
+            current_altitude=2.0, target_altitude=5.0, intercept_active=False
+        )
         self._assert_stabilization_gains(position_controller)
 
 
@@ -225,12 +247,16 @@ class TestAltitudeReachedTrigger:
     def test_fires_when_strictly_within_window(self, disconnected):
         behavior, stabilizer = disconnected
         # abs(4.9 - 5.0) == 0.09999... < 0.1 (the production float edge).
-        assert behavior.update(current_altitude=4.9, target_altitude=5.0) is None
+        assert behavior.update(
+            current_altitude=4.9, target_altitude=5.0, intercept_active=False
+        ) is None
         stabilizer.start_stabilizer_process.assert_called_once_with()
 
     def test_fires_when_slightly_above_target(self, disconnected):
         behavior, stabilizer = disconnected
-        behavior.update(current_altitude=5.05, target_altitude=5.0)
+        behavior.update(
+            current_altitude=5.05, target_altitude=5.0, intercept_active=False
+        )
         stabilizer.start_stabilizer_process.assert_called_once_with()
 
     @pytest.mark.parametrize(
@@ -245,20 +271,29 @@ class TestAltitudeReachedTrigger:
         self, disconnected, current, target
     ):
         behavior, stabilizer = disconnected
-        behavior.update(current_altitude=current, target_altitude=target)
+        behavior.update(
+            current_altitude=current, target_altitude=target,
+            intercept_active=False,
+        )
         stabilizer.start_stabilizer_process.assert_not_called()
 
     def test_does_not_fire_without_an_altitude_reading(self, disconnected):
         behavior, stabilizer = disconnected
-        behavior.update(current_altitude=None, target_altitude=5.0)
+        behavior.update(
+            current_altitude=None, target_altitude=5.0, intercept_active=False
+        )
         stabilizer.start_stabilizer_process.assert_not_called()
 
     def test_fires_every_iteration_while_condition_holds(self, disconnected):
         """The behavior re-triggers each loop; the once-only semantics are
         the StabilizerManager's (pinned below with the real manager)."""
         behavior, stabilizer = disconnected
-        behavior.update(current_altitude=5.0, target_altitude=5.0)
-        behavior.update(current_altitude=5.0, target_altitude=5.0)
+        behavior.update(
+            current_altitude=5.0, target_altitude=5.0, intercept_active=False
+        )
+        behavior.update(
+            current_altitude=5.0, target_altitude=5.0, intercept_active=False
+        )
         assert stabilizer.start_stabilizer_process.call_count == 2
 
     def test_fires_even_while_connected_if_intercept_active(
@@ -296,11 +331,13 @@ class TestTriggerOnceOnlySemantics:
             try:
                 assert manager.is_process_started is False
                 assert behavior.update(
-                    current_altitude=5.0, target_altitude=5.0
+                    current_altitude=5.0, target_altitude=5.0,
+                    intercept_active=False,
                 ) is None
                 assert manager.is_process_started is True
                 assert behavior.update(
-                    current_altitude=5.0, target_altitude=5.0
+                    current_altitude=5.0, target_altitude=5.0,
+                    intercept_active=False,
                 ) is None
                 assert popen.call_count == 1
                 position.update.assert_not_called()

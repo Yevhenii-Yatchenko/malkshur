@@ -22,27 +22,15 @@ from src.detection_config import (
     INTERCEPT_TIMEOUT_SECONDS,
 )
 from src.flight.intercept import InterceptGuidance
+from src.flight.setpoints import RCSetpoints
 from src.flight.stabilization import StabilizationBehavior
 
 
 class DroneController:
     """The class is intended to controll the drone using MAVLink protocol."""
-    __target_altitude = 0.2
     __current_altitude = None
-    __pitch_base = 1500
-    __roll_base = 1500
-    __yaw_base = 1500
 
     __is_up = False
-
-    __throttle_base = 1000
-
-    def __set_throttle_base(self, value):
-        """Set throttle base with upper limit enforcement."""
-        if value >= 1800:
-            value = 1800
-        self.__throttle_base = value
-
 
     def __init__(self):
         self.logger = get_logger("controller", "logs/controller.log", log_level=LOG_LEVEL)
@@ -72,6 +60,11 @@ class DroneController:
         self.__altitude_controller = AltitudeController(start_timestamp=timestamp)
         self.__position_controller = PositionController(start_timestamp=timestamp)
 
+        # RC PWM state (GRASP Step 6, IE-4): single owner of the four RC
+        # bases + altitude target, with the throttle ceiling sourced from
+        # THROTTLE['max'] instead of the former hardcoded literal.
+        self.__rc = RCSetpoints()
+
         # Detection system (object recognition)
         self.__detection_server = DetectionServer(logger=self.logger)
         self.__detection_client = DockerDetectionClient(logger=self.logger)
@@ -81,7 +74,6 @@ class DroneController:
         # Plain construction here until the Step 7 composition root.
         self.__intercept_guidance = InterceptGuidance(
             detection_server=self.__detection_server,
-            stabilizer=self.__stabilizer,
             logger=self.logger,
         )
         self.__stabilization = StabilizationBehavior(
@@ -200,15 +192,15 @@ class DroneController:
             self.logger.warning(f"Invalid parameter for monitor: {action}. Use start/stop or 1/0")
 
     def __set_rc_channel_pwm(self):
-        self.logger.debug(f"Altitude: {self.__get_current_altitude()} (Target: {self.__target_altitude});"
-                         f" RC channels - Roll: {self.__roll_base}, Pitch: {self.__pitch_base}, "
-                         f"Throttle: {self.__throttle_base}, Yaw: {self.__yaw_base}")
+        self.logger.debug(f"Altitude: {self.__get_current_altitude()} (Target: {self.__rc.target_altitude});"
+                         f" RC channels - Roll: {self.__rc.roll}, Pitch: {self.__rc.pitch}, "
+                         f"Throttle: {self.__rc.throttle}, Yaw: {self.__rc.yaw}")
 
         self.__mavlink.send_rc_override(
-            roll=self.__roll_base,
-            pitch=self.__pitch_base,
-            throttle=self.__throttle_base,
-            yaw=self.__yaw_base
+            roll=self.__rc.roll,
+            pitch=self.__rc.pitch,
+            throttle=self.__rc.throttle,
+            yaw=self.__rc.yaw
         )
 
     def _set_mode(self, params):
@@ -227,9 +219,9 @@ class DroneController:
             self.logger.error("Не вдалося зчитати поточну висоту.")
             return
 
-        self.__target_altitude = float(distance)
+        self.__rc.target_altitude = float(distance)
         self.__altitude_controller.position_pid.reset()
-        self.logger.info(f"Задана цільова висота: {self.__target_altitude} м (поточна: {self.__current_altitude:.2f} м).")
+        self.logger.info(f"Задана цільова висота: {self.__rc.target_altitude} м (поточна: {self.__current_altitude:.2f} м).")
 
     def _armingDisarming(self, params):
         isArming = params[0]
@@ -273,27 +265,27 @@ class DroneController:
         return self.__mavlink.is_landing
 
     def _move(self, params):
-        self.__roll_base = params[0]
-        self.__pitch_base = params[1]
-        self.__yaw_base = params[2]
-        self.logger.info(f"Move: self.__yaw_base={self.__yaw_base}, pitch_base={self.__pitch_base}, roll_base={self.__roll_base}")
+        self.__rc.roll = params[0]
+        self.__rc.pitch = params[1]
+        self.__rc.yaw = params[2]
+        self.logger.info(f"Move: self.__yaw_base={self.__rc.yaw}, pitch_base={self.__rc.pitch}, roll_base={self.__rc.roll}")
 
     def _land(self, params):
         self.logger.info("Initiating controlled landing...")
-        self.__pitch_base = 1500
-        self.__roll_base = 1500
+        self.__rc.pitch = 1500
+        self.__rc.roll = 1500
 
         current_altitude = self.__get_current_altitude()
         if current_altitude is None:
-            self.__set_throttle_base(1300)
+            self.__rc.throttle = 1300
             self.logger.warning("No altitude reading - emergency landing mode")
             return
 
-        self.__target_altitude = 0.1
+        self.__rc.target_altitude = 0.1
         self.logger.info(f"Landing from {current_altitude:.2f}m")
 
     def __updateThrottle(self):
-        """Thin orchestrator (GRASP Step 5): pick a flight behavior, apply
+        """Thin orchestrator (GRASP Step 5/6): pick a flight behavior, apply
         the setpoints it returns, then run altitude control and send RC."""
         current_altitude = self.__get_current_altitude()
 
@@ -305,14 +297,22 @@ class DroneController:
                 timeout_s=INTERCEPT_TIMEOUT_SECONDS,
                 min_confidence=INTERCEPT_CONFIDENCE_THRESHOLD,
             )
-            setpoints = self.__intercept_guidance.update(
+            result = self.__intercept_guidance.update(
                 target=target,
                 current_altitude=current_altitude,
-                target_altitude=self.__target_altitude,
+                target_altitude=self.__rc.target_altitude,
             )
-            if setpoints is not None:
-                self.__apply_setpoints(setpoints)
-            if target is not None:
+            if result.setpoints is not None:
+                self.__rc.apply(result.setpoints)
+            if result.reenable_stabilization and not self.__stabilizer.is_connected:
+                # Re-enable stabilization after the intercept deactivated
+                # (the handoff: an explicit intent since Step 6, executed
+                # here synchronously -- same iteration, before the
+                # stabilization behavior runs, as the former in-update
+                # side effect did).
+                self.logger.info("Re-enabling stabilization after intercept")
+                self.__stabilizer.start_stabilizer_process()
+            if result.active:
                 # Active intercept: skip stabilization, go straight to
                 # altitude control.
                 self.__run_altitude_control(current_altitude)
@@ -321,22 +321,13 @@ class DroneController:
         # Normal stabilization mode (if not intercepting)
         setpoints = self.__stabilization.update(
             current_altitude=current_altitude,
-            target_altitude=self.__target_altitude,
+            target_altitude=self.__rc.target_altitude,
             intercept_active=self.__intercept_guidance.is_intercepting,
         )
         if setpoints is not None:
-            self.__apply_setpoints(setpoints)
+            self.__rc.apply(setpoints)
 
         self.__run_altitude_control(current_altitude)
-
-    def __apply_setpoints(self, setpoints):
-        """Apply a behavior's AttitudeSetpoints to the RC bases (and the
-        altitude target, unless the behavior left it as None)."""
-        self.__roll_base = setpoints.roll_pwm
-        self.__pitch_base = setpoints.pitch_pwm
-        self.__yaw_base = setpoints.yaw_pwm
-        if setpoints.target_altitude is not None:
-            self.__target_altitude = setpoints.target_altitude
 
     def __run_altitude_control(self, current_altitude):
         """Altitude PID -> throttle base -> RC override send."""
@@ -347,10 +338,10 @@ class DroneController:
 
         try:
             new_throttle = self.__altitude_controller.update(
-                target_altitude=self.__target_altitude,
+                target_altitude=self.__rc.target_altitude,
                 current_altitude=current_altitude
             )
-            self.__set_throttle_base(new_throttle)
+            self.__rc.throttle = new_throttle
             self.__set_rc_channel_pwm()
         except Exception as e:
             self.logger.error(f"Error in altitude control: {e}")

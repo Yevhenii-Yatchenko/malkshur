@@ -2,13 +2,24 @@
 
 GRASP Step 5 (REFACTORING_PLAN.md, HC-1/IE-1): this state machine -- the
 ``__intercept_mode`` flag, activation on an active target, deadband/yaw/
-altitude-step corrections, and timeout deactivation with the stabilization
-re-enable handoff -- used to live inline in
-``DroneController.__updateThrottle``.  All numeric logic (deadbands, yaw
+altitude-step corrections, and timeout deactivation -- used to live inline
+in ``DroneController.__updateThrottle``.  All numeric logic (deadbands, yaw
 gain, altitude step, mode enter/exit conditions, log messages) is moved
 VERBATIM from the controller; only the mechanism changed: instead of
 mutating the controller's RC base attributes in place, :meth:`update`
-returns :class:`AttitudeSetpoints` intents which the controller applies.
+returns intents which the controller applies.
+
+Step 6 review absorption (two Step 5 review debts): :meth:`update` returns a
+frozen :class:`InterceptResult` instead of a bare
+``Optional[AttitudeSetpoints]``.
+
+- ``active`` lets the orchestrator stop re-deriving "intercept is steering"
+  from its own ``target is not None`` check.
+- ``reenable_stabilization`` turns the stabilization re-enable handoff from
+  a hidden side effect (this class used to hold a StabilizerManager solely
+  to restart it on deactivation) into an explicit intent the controller
+  executes itself, synchronously in the same iteration -- the same moment
+  the side effect used to run.  The StabilizerManager dependency is gone.
 
 Division of labor (unchanged from Step 4):
 
@@ -17,7 +28,8 @@ Division of labor (unchanged from Step 4):
   typed :class:`DetectionReading` -- the controller passes it through here.
 - ``InterceptGuidance`` owns the intercept state machine itself.
 - The detection-server *running* check and the RC base/altitude-PID plumbing
-  stay in the controller (RCSetpoints is Step 6, composition root Step 7).
+  stay in the controller (RC state lives in RCSetpoints since Step 6,
+  composition root is Step 7).
 
 Collaborators are constructor-injected (no import of controller.py):
 
@@ -25,12 +37,9 @@ Collaborators are constructor-injected (no import of controller.py):
   inside the timeout-deactivation condition, exactly where the controller
   used to call it (and, thanks to ``and`` short-circuiting, only when the
   intercept mode is actually active -- preserved).
-- ``stabilizer``: the StabilizerManager; deactivation re-enables
-  stabilization through it (``is_connected`` check +
-  ``start_stabilizer_process()``, the body of the controller's
-  ``_stabilize`` command).
 """
 
+from dataclasses import dataclass
 from typing import Optional
 
 from src.detection_config import (
@@ -46,23 +55,52 @@ from src.detection_config import (
 from src.domain.types import AttitudeSetpoints, DetectionReading
 
 
+@dataclass(frozen=True)
+class InterceptResult:
+    """Outcome of one :meth:`InterceptGuidance.update` iteration.
+
+    - ``setpoints``: attitude/altitude intents to apply, or ``None`` when
+      this iteration changes nothing.
+    - ``active``: True iff an active target drove intercept corrections this
+      iteration -- the controller's "skip stabilization, go straight to
+      altitude control" gate.  Exactly the former ``target is not None``
+      condition the orchestrator used to re-derive: False on the
+      deactivation iteration (whose neutral-hold setpoints are followed by
+      a normal stabilization pass, as before) and in the limbo state
+      (timeout not yet elapsed), even though ``is_intercepting`` stays True
+      in limbo.
+    - ``reenable_stabilization``: True only on the timeout-deactivation
+      iteration.  The controller must execute the handoff itself --
+      ``if not stabilizer.is_connected: start_stabilizer_process()`` --
+      synchronously, before its stabilization behavior runs, which is the
+      same moment the former in-update side effect fired (the is_connected
+      check still happens at deactivation time relative to all stabilizer
+      interactions; only a pure RC-state assignment sits in between).
+    """
+
+    setpoints: Optional[AttitudeSetpoints]
+    active: bool
+    reenable_stabilization: bool
+
+
+#: The "nothing happened" result: no target, no mode change.
+_IDLE = InterceptResult(setpoints=None, active=False, reenable_stabilization=False)
+
+
 class InterceptGuidance:
     """State machine that converts active target detections into attitude
     and altitude intents, owning the intercept mode flag."""
 
-    def __init__(self, detection_server, stabilizer, logger):
+    def __init__(self, detection_server, logger):
         """
         Args:
             detection_server: DetectionServer; only
                 ``get_time_since_last_detection()`` is consulted (for the
                 timeout-deactivation condition).
-            stabilizer: StabilizerManager; deactivation re-enables
-                stabilization through it.
             logger: the controller's logger (intercept log lines keep going
                 to logs/controller.log exactly as before).
         """
         self.__detection_server = detection_server
-        self.__stabilizer = stabilizer
         self.__logger = logger
 
         # Intercept mode state (formerly DroneController.__intercept_mode).
@@ -97,7 +135,7 @@ class InterceptGuidance:
         target: Optional[DetectionReading],
         current_altitude: Optional[float],
         target_altitude: float,
-    ) -> Optional[AttitudeSetpoints]:
+    ) -> InterceptResult:
         """Advance the state machine for one control-loop iteration.
 
         Args:
@@ -107,18 +145,24 @@ class InterceptGuidance:
             target_altitude: the controller's current altitude target.
 
         Returns:
-            AttitudeSetpoints to apply, or None when nothing changes:
+            An :class:`InterceptResult`:
 
             - target present -> intercept corrections (activating the mode
-              first if needed); ``is_intercepting`` is True afterwards and
-              the controller must skip stabilization for this iteration.
+              first if needed), ``active=True``: the controller must skip
+              stabilization for this iteration.
             - no target, mode active and detection timeout elapsed ->
               deactivation: neutral attitude, altitude hold at the current
-              reading, stabilization re-enable handoff.
-            - otherwise -> None.
+              reading, ``reenable_stabilization=True``.
+            - otherwise -> the idle result (no setpoints, no flags).
         """
         if target is not None:
-            return self.__intercept(target, current_altitude, target_altitude)
+            return InterceptResult(
+                setpoints=self.__intercept(
+                    target, current_altitude, target_altitude
+                ),
+                active=True,
+                reenable_stabilization=False,
+            )
         return self.__maybe_deactivate(current_altitude)
 
     def __intercept(
@@ -175,7 +219,7 @@ class InterceptGuidance:
 
     def __maybe_deactivate(
         self, current_altitude: Optional[float]
-    ) -> Optional[AttitudeSetpoints]:
+    ) -> InterceptResult:
         """The no-target branch, moved verbatim from __updateThrottle.
 
         Note the short-circuit: ``get_time_since_last_detection()`` is only
@@ -196,16 +240,18 @@ class InterceptGuidance:
             if current_altitude is not None:
                 new_target_altitude = current_altitude
                 self.__logger.info(f"Holding altitude at {current_altitude:.2f}m")
-            # Re-enable stabilization
-            if not self.__stabilizer.is_connected:
-                self.__logger.info("Re-enabling stabilization after intercept")
-                self.__stabilizer.start_stabilizer_process()
             # Stop forward movement (neutral attitude; None target altitude
-            # means "leave the controller's target unchanged")
-            return AttitudeSetpoints(
-                roll_pwm=PWM_NEUTRAL,
-                pitch_pwm=PWM_NEUTRAL,
-                yaw_pwm=PWM_NEUTRAL,
-                target_altitude=new_target_altitude,
+            # means "leave the controller's target unchanged").  The
+            # stabilization re-enable is the controller's job now, flagged
+            # via reenable_stabilization.
+            return InterceptResult(
+                setpoints=AttitudeSetpoints(
+                    roll_pwm=PWM_NEUTRAL,
+                    pitch_pwm=PWM_NEUTRAL,
+                    yaw_pwm=PWM_NEUTRAL,
+                    target_altitude=new_target_altitude,
+                ),
+                active=False,
+                reenable_stabilization=True,
             )
-        return None
+        return _IDLE

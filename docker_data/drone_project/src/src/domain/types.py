@@ -105,13 +105,17 @@ class AttitudeSetpoints:
     GRASP Step 5 (HC-1): the extracted flight behaviors
     (``src/flight/intercept.py``, ``src/flight/stabilization.py``) no longer
     mutate the controller's RC base attributes directly; they return this
-    value object and ``DroneController`` applies it to its roll/pitch/yaw
-    bases and target altitude (RC ownership moves to RCSetpoints in Step 6).
+    value object and the controller applies it to
+    :class:`src.flight.setpoints.RCSetpoints` (the RC state owner since
+    Step 6).
 
     - ``roll_pwm`` / ``pitch_pwm`` / ``yaw_pwm``: the new RC base values.
       Dataclasses do not coerce types, so values flow through exactly as
-      the behaviors produced them (e.g. PositionController's numpy ints) --
-      byte-identical to the former direct attribute assignments.
+      the behaviors produced them (e.g. PositionController's numpy ints);
+      RCSetpoints normalizes them to built-in ``int`` on application, which
+      packs into MAVLink's uint16 channels byte-identically (Step 6 -- this
+      is what makes the ``int`` annotations below honest at the point of
+      consumption).
     - ``target_altitude``: new altitude target in meters, or ``None`` to
       leave the controller's current target unchanged (the stabilization
       behavior never touches it; intercept deactivation leaves it alone

@@ -47,7 +47,7 @@ class StabilizationBehavior:
         self,
         current_altitude: Optional[float],
         target_altitude: float,
-        intercept_active: bool = False,
+        intercept_active: bool,
     ) -> Optional[AttitudeSetpoints]:
         """Run one stabilization iteration.
 
@@ -56,7 +56,9 @@ class StabilizationBehavior:
             target_altitude: the controller's current altitude target.
             intercept_active: True while InterceptGuidance holds the
                 intercept mode (the former ``not self.__intercept_mode``
-                side of the gate); suppresses position corrections.
+                side of the gate); suppresses position corrections.  No
+                default: the caller owns this gate input (Step 5 review --
+                the False default was test ergonomics only).
 
         Returns:
             AttitudeSetpoints with the PositionController's PWM output when
