@@ -43,6 +43,7 @@ logger) are constructor-injected, so the tests drive them as mocks; there
 is no controller import anywhere.
 """
 
+import dataclasses
 from unittest import mock
 
 import pytest
@@ -414,7 +415,7 @@ class TestReenableStabilizationIntent:
         result = guidance.update(
             target=reading(), current_altitude=5.0, target_altitude=5.0
         )
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             result.active = False
 
 

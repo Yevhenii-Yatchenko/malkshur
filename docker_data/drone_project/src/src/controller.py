@@ -1,89 +1,77 @@
-from datetime import datetime
 import time
 from threading import Timer
 
-from src.mavlink_manager import MAVLinkManager
-from src.sensor_manager import SensorManager
-from src.stabilizer_manager import StabilizerManager
-from src.logger import get_logger
-from src.pid_controller import AltitudeController
-from src.position_controller import PositionController
-from src.altitude_config import CONTROL, DEBUG
-from src.battery_monitor import BatteryMonitor
-from src.signal_handler import SignalHandler
-from src.command_handler import CommandHandler
-from src.controller_config import (
-    ENABLE_BATTERY_MONITOR, SKY_ANCHOR_PATH, LOG_LEVEL, ARM_IN
-)
-from src.detection_server import DetectionServer
-from src.detection_client import DockerDetectionClient
-from src.detection_config import (
-    INTERCEPT_CONFIDENCE_THRESHOLD,
-    INTERCEPT_TIMEOUT_SECONDS,
-)
-from src.flight.intercept import InterceptGuidance
-from src.flight.setpoints import RCSetpoints
-from src.flight.stabilization import StabilizationBehavior
+from src.altitude_config import CONTROL
+from src.controller_config import ARM_IN
 
 
 class DroneController:
-    """The class is intended to controll the drone using MAVLink protocol."""
-    __current_altitude = None
+    """The class is intended to controll the drone using MAVLink protocol.
 
-    __is_up = False
+    Thin orchestrator since GRASP Step 7 (LC-3): every collaborator is
+    constructed by the composition root (``src/app.py``, the only place
+    that builds the object graph) and injected here.  ``__init__`` only
+    stores them, registers the command handlers (they are bound methods, so
+    they cannot exist before the controller does), starts the telnet
+    command processing thread, and arms the optional ARM_IN auto-arm timer
+    -- in exactly that order, as before.
+    """
 
-    def __init__(self):
-        self.logger = get_logger("controller", "logs/controller.log", log_level=LOG_LEVEL)
+    def __init__(
+        self,
+        *,
+        logger,
+        mavlink,
+        sensor,
+        stabilizer,
+        battery_monitor,
+        altitude_controller,
+        rc,
+        detection_server,
+        detection_client,
+        intercept_guidance,
+        stabilization,
+        signal_handler,
+        command_handler,
+    ):
+        """
+        Args:
+            logger: controller logger (logs/controller.log).
+            mavlink: connected MAVLinkManager.
+            sensor: started AltitudeSensor (LIDAR or barometer).
+            stabilizer: StabilizerManager (sky_anchor process + client).
+            battery_monitor: started BatteryMonitor, or None (Gazebo mode).
+            altitude_controller: AltitudeController (cascade altitude PID).
+            rc: RCSetpoints, the single owner of the RC PWM bases.
+            detection_server: DetectionServer (owns target-validity rules).
+            detection_client: DockerDetectionClient.
+            intercept_guidance: InterceptGuidance state machine.
+            stabilization: StabilizationBehavior (vision XY hold; holds the
+                PositionController, which the controller itself never
+                touches directly).
+            signal_handler: SignalHandler (SIGTERM -> shutdown flag).
+            command_handler: CommandHandler with its TelnetServer; commands
+                are registered and processing is started here.
+        """
+        self.logger = logger
+        self.__mavlink = mavlink
+        self.__sensor = sensor
+        self.__stabilizer = stabilizer
+        self.battery_monitor = battery_monitor
+        self.__altitude_controller = altitude_controller
+        self.__rc = rc
+        self.__detection_server = detection_server
+        self.__detection_client = detection_client
+        self.__intercept_guidance = intercept_guidance
+        self.__stabilization = stabilization
+        self.signal_handler = signal_handler
+        self.__command_handler = command_handler
 
-        self.__mavlink = MAVLinkManager()
-        master = self.__mavlink.connect()
+        # Loop state, per instance (Step 7 carried bullet: formerly class
+        # attributes shadowed on first assignment).
+        self.__current_altitude = None
+        self.__is_up = False
 
-        self.__sensor = SensorManager.create_sensor(mavlink_connection=master)
-        self.__sensor.start()
-
-        self.__stabilizer = StabilizerManager(
-            stabilizer_path=SKY_ANCHOR_PATH,
-            logger=self.logger
-        )
-
-        if ENABLE_BATTERY_MONITOR:
-            self.battery_monitor = BatteryMonitor(
-                master=master,
-                controller_logger=self.logger
-            )
-            self.battery_monitor.start()
-        else:
-            self.battery_monitor = None
-            self.logger.info("Battery monitor disabled (Gazebo mode)")
-
-        timestamp = datetime.now()
-        self.__altitude_controller = AltitudeController(start_timestamp=timestamp)
-        self.__position_controller = PositionController(start_timestamp=timestamp)
-
-        # RC PWM state (GRASP Step 6, IE-4): single owner of the four RC
-        # bases + altitude target, with the throttle ceiling sourced from
-        # THROTTLE['max'] instead of the former hardcoded literal.
-        self.__rc = RCSetpoints()
-
-        # Detection system (object recognition)
-        self.__detection_server = DetectionServer(logger=self.logger)
-        self.__detection_client = DockerDetectionClient(logger=self.logger)
-
-        # Flight behaviors extracted from __updateThrottle (GRASP Step 5):
-        # the intercept state machine and the vision stabilization branch.
-        # Plain construction here until the Step 7 composition root.
-        self.__intercept_guidance = InterceptGuidance(
-            detection_server=self.__detection_server,
-            logger=self.logger,
-        )
-        self.__stabilization = StabilizationBehavior(
-            stabilizer=self.__stabilizer,
-            position_controller=self.__position_controller,
-        )
-
-        self.signal_handler = SignalHandler()
-
-        self.__command_handler = CommandHandler(logger=self.logger)
         self.__register_commands()
         self.__command_handler.start_telnet_processing()
 
@@ -290,13 +278,11 @@ class DroneController:
         current_altitude = self.__get_current_altitude()
 
         # Check for intercept mode (target recognition).  Data validity is
-        # the detection server's call; the state machine lives in
-        # InterceptGuidance; the running check stays here.
+        # the detection server's call -- including the INTERCEPT_* thresholds
+        # it owns since Step 7; the state machine lives in InterceptGuidance;
+        # the running check stays here.
         if self.__detection_server.is_running():
-            target = self.__detection_server.get_active_target(
-                timeout_s=INTERCEPT_TIMEOUT_SECONDS,
-                min_confidence=INTERCEPT_CONFIDENCE_THRESHOLD,
-            )
+            target = self.__detection_server.get_active_target()
             result = self.__intercept_guidance.update(
                 target=target,
                 current_altitude=current_altitude,

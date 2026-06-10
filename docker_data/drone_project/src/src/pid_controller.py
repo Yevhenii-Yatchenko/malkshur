@@ -1,8 +1,11 @@
 import time
 from collections import deque
+from typing import Optional
+
 import numpy as np
 from .altitude_csv_logger import AltitudeCSVLogger
-from src.altitude_config import ALTITUDE_PID_TAKEOFF, VELOCITY_PID_FLIGHT, LIMITS, THROTTLE, FILTERING, CONTROL, DEBUG
+from src.altitude_config import THROTTLE, CONTROL, DEBUG
+from src.config.objects import AltitudeConfig
 
 
 class PIDController:
@@ -184,70 +187,60 @@ class AltitudeController:
     """
 
     def __init__(self,
-                 alt_kp=ALTITUDE_PID_TAKEOFF['kp'],
-                 alt_ki=ALTITUDE_PID_TAKEOFF['ki'],
-                 alt_kd=ALTITUDE_PID_TAKEOFF['kd'],
-
-                 vel_kp=VELOCITY_PID_FLIGHT['kp'],
-                 vel_ki=VELOCITY_PID_FLIGHT['ki'],
-                 vel_kd=VELOCITY_PID_FLIGHT['kd'],
-
-                 max_velocity=LIMITS['max_velocity'],
-                 max_acceleration=LIMITS['max_acceleration'],
-                 throttle_hover=THROTTLE['hover'],
-                 throttle_min=THROTTLE['min'],
-                 throttle_max=THROTTLE['max'],
-                 altitude_filter_alpha=FILTERING['altitude_filter_alpha'],
-                 velocity_filter_size=FILTERING['velocity_filter_size'],
                  start_timestamp=None,
                  *,
+                 config: Optional[AltitudeConfig] = None,
                  csv_logger=None):
         """
         Initialize altitude controller.
 
         Args:
-            alt_kp, alt_ki, alt_kd: PID gains for altitude (position) control
-            vel_kp, vel_ki, vel_kd: PID gains for velocity control
-            max_velocity: Maximum vertical velocity in m/s
-            max_acceleration: Maximum vertical acceleration in m/s^2
-            throttle_hover: PWM value for hover throttle
-            throttle_min: Minimum throttle PWM value
-            throttle_max: Maximum throttle PWM value
-            altitude_filter_alpha: Exponential filter coefficient for altitude
-            velocity_filter_size: Number of samples for velocity averaging
+            start_timestamp: Optional datetime for consistent session naming
+                of the default CSV logger
+            config: Optional injected AltitudeConfig (GRASP Step 7, LC-2).
+                If None (default), the configuration is read from the
+                altitude_config.py dicts exactly as the former import-time
+                default arguments did (same dicts, same values).
             csv_logger: Optional injected CSV logger for control-data logging.
                 If None (default), a file-writing AltitudeCSVLogger is created
                 exactly as before.
         """
+        if config is None:
+            config = AltitudeConfig.from_dicts()
+
         # Position controller (outer loop)
         self.position_pid = PIDController(
-            kp=alt_kp, ki=alt_ki, kd=alt_kd,
-            output_min=-max_velocity, output_max=max_velocity,
-            integral_limit=max_velocity * 0.5
+            kp=config.altitude_pid.kp,
+            ki=config.altitude_pid.ki,
+            kd=config.altitude_pid.kd,
+            output_min=-config.max_velocity, output_max=config.max_velocity,
+            integral_limit=config.max_velocity * 0.5
         )
 
         # Velocity controller (inner loop)
         self.velocity_pid = PIDController(
-            kp=vel_kp, ki=vel_ki, kd=vel_kd,
+            kp=config.velocity_pid.kp,
+            ki=config.velocity_pid.ki,
+            kd=config.velocity_pid.kd,
             output_min=-200, output_max=200,  # Throttle adjustment range
             integral_limit=100
         )
 
         # Throttle parameters
-        self.throttle_hover = throttle_hover
-        self.throttle_min = throttle_min
-        self.throttle_max = throttle_max
+        self.throttle_hover = config.throttle_hover
+        self.throttle_min = config.throttle_min
+        self.throttle_max = config.throttle_max
 
         # Limits
-        self.max_velocity = max_velocity
-        self.max_acceleration = max_acceleration
+        self.max_velocity = config.max_velocity
+        self.max_acceleration = config.max_acceleration
 
         # Filtering
-        self.altitude_filter_alpha = altitude_filter_alpha
+        self.altitude_filter_alpha = config.altitude_filter_alpha
         self.filtered_altitude = None
 
         # Velocity estimation
-        self.velocity_history = deque(maxlen=velocity_filter_size)
+        self.velocity_history = deque(maxlen=config.velocity_filter_size)
         self.last_altitude = None
         self.last_altitude_time = None
         self.estimated_velocity = 0.0
@@ -257,7 +250,7 @@ class AltitudeController:
         self.last_update_time = None
 
         # Throttle smoothing
-        self.last_throttle = throttle_hover
+        self.last_throttle = config.throttle_hover
 
         # Initialize CSV logger with session timestamp
         # Determine controller type for data labeling

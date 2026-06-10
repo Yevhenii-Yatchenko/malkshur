@@ -5,8 +5,10 @@ Configures object recognition client (Docker) and server (monitoring)
 
 import os
 
-# Check if we're running in Gazebo simulation mode
-USE_GAZEBO = os.environ.get('USE_GAZEBO', 'false').lower() == 'true'
+# Single source of the Gazebo-mode switch (GRASP Step 7, LC-2): the USE_GAZEBO
+# environment variable is read exactly once, in controller_config; this module
+# re-uses that value for its Gazebo/hardware selections below.
+from src.controller_config import USE_GAZEBO
 
 # ============================================================================
 # Detection Client (Docker) Configuration

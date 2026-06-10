@@ -16,6 +16,8 @@ from src.detection_config import (
     DETECTION_SERVER_HOST,
     DETECTION_SERVER_PORT,
     DETECTION_SERVER_LOG,
+    INTERCEPT_CONFIDENCE_THRESHOLD,
+    INTERCEPT_TIMEOUT_SECONDS,
 )
 
 
@@ -32,7 +34,9 @@ class DetectionServer:
         host: str = DETECTION_SERVER_HOST,
         port: int = DETECTION_SERVER_PORT,
         log_file: str = DETECTION_SERVER_LOG,
-        logger=None
+        logger=None,
+        intercept_timeout_s: float = INTERCEPT_TIMEOUT_SECONDS,
+        intercept_min_confidence: float = INTERCEPT_CONFIDENCE_THRESHOLD,
     ):
         """
         Initialize detection server.
@@ -42,10 +46,18 @@ class DetectionServer:
             port: Server port
             log_file: Log file path
             logger: Optional external logger
+            intercept_timeout_s: Default maximum age of the latest detection
+                for ``get_active_target`` (GRASP Step 7 carried bullet: the
+                server owns the INTERCEPT_* thresholds; the controller no
+                longer passes them per call)
+            intercept_min_confidence: Default inclusive confidence floor for
+                ``get_active_target``
         """
         self.host = host
         self.port = port
         self.log_file = log_file
+        self.intercept_timeout_s = intercept_timeout_s
+        self.intercept_min_confidence = intercept_min_confidence
         self.running = False
         self.server_thread: Optional[threading.Thread] = None
         self.server_socket: Optional[socket.socket] = None
@@ -145,7 +157,9 @@ class DetectionServer:
             return time.time() - self._last_update_time
 
     def get_active_target(
-        self, timeout_s: float, min_confidence: float
+        self,
+        timeout_s: Optional[float] = None,
+        min_confidence: Optional[float] = None,
     ) -> Optional[DetectionReading]:
         """
         Return the current detection as a typed reading if it is actionable.
@@ -160,9 +174,12 @@ class DetectionServer:
 
         Args:
             timeout_s: Maximum age of the latest detection (strictly less
-                than, matching the former ``< INTERCEPT_TIMEOUT_SECONDS``)
+                than, matching the former ``< INTERCEPT_TIMEOUT_SECONDS``).
+                None (default) uses the constructor-owned threshold (GRASP
+                Step 7 carried bullet).
             min_confidence: Inclusive confidence floor (matching the former
-                ``>= INTERCEPT_CONFIDENCE_THRESHOLD``)
+                ``>= INTERCEPT_CONFIDENCE_THRESHOLD``).  None (default) uses
+                the constructor-owned threshold.
 
         Returns:
             DetectionReading for an active target, or None.  Malformed
@@ -170,6 +187,10 @@ class DetectionServer:
             stores whatever json.loads returned) are logged and treated as
             no target; they never raise into the control loop.
         """
+        if timeout_s is None:
+            timeout_s = self.intercept_timeout_s
+        if min_confidence is None:
+            min_confidence = self.intercept_min_confidence
         try:
             data = self.get_latest_detection()
             if not data:

@@ -90,6 +90,30 @@ class TestThrottleUpperClamp:
         assert rc.throttle == value
 
 
+class TestThrottleCeilingInjection:
+    """Step 7 carried bullet: the ceiling is a constructor parameter that
+    the composition root passes explicitly, defaulting to THROTTLE['max']
+    (so a bare RCSetpoints() behaves exactly as before -- pinned by
+    TestThrottleUpperClamp above)."""
+
+    def test_custom_ceiling_clamps_above(self):
+        rc = RCSetpoints(throttle_max=1700)
+        rc.throttle = 1701
+        assert rc.throttle == 1700
+
+    def test_custom_ceiling_keeps_ge_semantics(self):
+        """Exactly AT the ceiling already clamps (>=, as the former
+        hardcoded ``value >= 1800`` did)."""
+        rc = RCSetpoints(throttle_max=1700)
+        rc.throttle = 1700
+        assert rc.throttle == 1700
+
+    def test_below_custom_ceiling_passes_through(self):
+        rc = RCSetpoints(throttle_max=1700)
+        rc.throttle = 1699
+        assert rc.throttle == 1699
+
+
 class TestThrottleHasNoLowerClampHere:
     """The controller level never clamped the throttle floor; the owner of
     THROTTLE['min'] is AltitudeController.update (np.clip on its output).

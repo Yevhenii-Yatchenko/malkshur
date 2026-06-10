@@ -26,14 +26,23 @@ class CommandHandler:
     - Run Telnet command processing in separate thread
     """
 
-    def __init__(self, logger=None, telnet_host: str = '0.0.0.0', telnet_port: int = 2323) -> None:
+    def __init__(self, logger=None, telnet_host: str = '0.0.0.0', telnet_port: int = 2323,
+                 telnet_server: Optional[TelnetServer] = None) -> None:
         """
         Initialize command handler.
 
         Args:
             logger: Optional logger instance (creates own if not provided)
-            telnet_host: Host for Telnet server
-            telnet_port: Port for Telnet server
+            telnet_host: Host for Telnet server (fallback construction and
+                the startup log line)
+            telnet_port: Port for Telnet server (fallback construction and
+                the startup log line; the command port is 2323)
+            telnet_server: Optional injected TelnetServer (GRASP Step 7,
+                LC-3; the composition root passes one explicitly, together
+                with matching telnet_host/telnet_port).  If None (default),
+                a TelnetServer(telnet_host, telnet_port) is created exactly
+                as before.  Either way the handler starts it here, so the
+                listener comes up at the same moment as always.
         """
         self.__logger = logger or get_logger(
             "command_handler",
@@ -42,7 +51,9 @@ class CommandHandler:
         )
         self.__command_map: Dict[str, Callable] = {}
 
-        self.__telnet_server = TelnetServer(host=telnet_host, port=telnet_port)
+        if telnet_server is None:
+            telnet_server = TelnetServer(host=telnet_host, port=telnet_port)
+        self.__telnet_server = telnet_server
         self.__telnet_server.start()
         self.__logger.info(f"Telnet server started on {telnet_host}:{telnet_port}")
 

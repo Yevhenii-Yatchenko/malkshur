@@ -52,6 +52,16 @@ class TestConstructionSideEffects:
         handler.cleanup()
         telnet_cls.return_value.stop.assert_called_once_with()
 
+    def test_injected_telnet_server_is_used_and_started(self, telnet_cls):
+        """Step 7 (LC-3): the composition root injects the TelnetServer;
+        the handler must start the injected one and construct nothing."""
+        server = mock.Mock()
+        handler = CommandHandler(logger=mock.Mock(), telnet_server=server)
+        telnet_cls.assert_not_called()
+        server.start.assert_called_once_with()
+        handler.cleanup()
+        server.stop.assert_called_once_with()
+
 
 class TestParseMessage:
     @pytest.mark.parametrize(

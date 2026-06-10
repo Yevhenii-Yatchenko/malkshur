@@ -1,5 +1,5 @@
-from src.controller import DroneController
+from src.app import build_controller
 
 
-drone = DroneController()
+drone = build_controller()
 drone.loop()

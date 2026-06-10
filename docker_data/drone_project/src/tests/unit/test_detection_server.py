@@ -13,6 +13,11 @@ scope):
 - otherwise a typed DetectionReading with the direction components
   extracted exactly as the controller used to do it.
 
+Step 7 carried bullet: the server owns the INTERCEPT_* thresholds as
+constructor defaults; ``get_active_target()`` called without arguments uses
+them (the controller no longer passes thresholds per call), while explicit
+arguments still override.
+
 The server is never start()ed: get_active_target only reads the
 _latest_data/_last_update_time pair that _handle_client maintains, so the
 tests seed those directly (no sockets, no threads).
@@ -23,6 +28,10 @@ from unittest import mock
 
 import pytest
 
+from src.detection_config import (
+    INTERCEPT_CONFIDENCE_THRESHOLD,
+    INTERCEPT_TIMEOUT_SECONDS,
+)
 from src.detection_server import DetectionServer
 from src.domain.types import DetectionReading
 
@@ -94,6 +103,58 @@ class TestGetActiveTarget:
         before = {key: value for key, value in payload.items()}
         server.get_active_target(timeout_s=10.0, min_confidence=0.5)
         assert payload == before
+
+
+class TestConstructorOwnedThresholds:
+    """Step 7 carried bullet: INTERCEPT_* thresholds live on the server."""
+
+    def test_threshold_defaults_come_from_detection_config(self):
+        server = DetectionServer(logger=mock.Mock())
+        assert server.intercept_timeout_s == INTERCEPT_TIMEOUT_SECONDS
+        assert server.intercept_min_confidence == INTERCEPT_CONFIDENCE_THRESHOLD
+
+    def test_no_args_call_uses_constructor_confidence_floor(self):
+        server = DetectionServer(
+            logger=mock.Mock(),
+            intercept_timeout_s=10.0,
+            intercept_min_confidence=0.8,
+        )
+        server._latest_data = detection(confidence=0.7)
+        server._last_update_time = time.time()
+        assert server.get_active_target() is None
+
+        server._latest_data = detection(confidence=0.8)
+        target = server.get_active_target()
+        assert target is not None
+        assert target.confidence == pytest.approx(0.8)
+
+    def test_no_args_call_uses_constructor_timeout(self):
+        server = DetectionServer(
+            logger=mock.Mock(),
+            intercept_timeout_s=1.0,
+            intercept_min_confidence=0.5,
+        )
+        server._latest_data = detection(confidence=0.9)
+        server._last_update_time = time.time() - 5.0
+        assert server.get_active_target() is None
+
+        server._last_update_time = time.time()
+        assert server.get_active_target() is not None
+
+    def test_explicit_args_override_constructor_thresholds(self):
+        """The explicit per-call parameters stay available (and win)."""
+        server = DetectionServer(
+            logger=mock.Mock(),
+            intercept_timeout_s=0.001,
+            intercept_min_confidence=0.99,
+        )
+        server._latest_data = detection(confidence=0.6)
+        server._last_update_time = time.time() - 1.0
+        assert server.get_active_target() is None
+        assert (
+            server.get_active_target(timeout_s=60.0, min_confidence=0.5)
+            is not None
+        )
 
 
 class TestGetActiveTargetMalformedPayloads:

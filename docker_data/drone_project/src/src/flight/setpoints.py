@@ -44,7 +44,15 @@ from src.domain.types import AttitudeSetpoints
 class RCSetpoints:
     """Owns the roll/pitch/yaw/throttle PWM bases plus the altitude target."""
 
-    def __init__(self):
+    def __init__(self, throttle_max: int = THROTTLE['max']):
+        """
+        Args:
+            throttle_max: Throttle ceiling PWM (GRASP Step 7 carried bullet:
+                injectable so the composition root passes it explicitly;
+                defaults to ``THROTTLE['max']`` from altitude_config exactly
+                as the Step 6 inline read did).
+        """
+        self.__throttle_max = throttle_max
         # Initial values moved verbatim from the former DroneController
         # class attributes (neutral attitude, idle throttle, ground-hug
         # altitude target).
@@ -85,11 +93,11 @@ class RCSetpoints:
     @throttle.setter
     def throttle(self, value) -> None:
         """The former ``DroneController.__set_throttle_base``, with the
-        hardcoded ``1800`` replaced by its config source (IE-4).  Upper
-        clamp only -- see the module docstring for why there is no lower
-        one here."""
-        if value >= THROTTLE['max']:
-            value = THROTTLE['max']
+        hardcoded ``1800`` replaced by its config source (IE-4; a
+        constructor parameter since Step 7).  Upper clamp only -- see the
+        module docstring for why there is no lower one here."""
+        if value >= self.__throttle_max:
+            value = self.__throttle_max
         self.__throttle = int(value)
 
     @property

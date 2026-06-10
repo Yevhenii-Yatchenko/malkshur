@@ -29,15 +29,22 @@ class StabilizerManager:
     - Manage connection state
     """
 
-    def __init__(self, stabilizer_path: str, host: str = 'localhost', port: int = 8888, logger=None) -> None:
+    def __init__(self, stabilizer_path: str, host: str = 'localhost', port: int = 8888, logger=None,
+                 client: Optional[SkyAnchorClient] = None) -> None:
         """
         Initialize stabilizer manager.
 
         Args:
             stabilizer_path: Path to sky_anchor main script
-            host: Host where stabilizer server runs
-            port: Port for stabilizer server
+            host: Host where stabilizer server runs (used only when no
+                client is injected)
+            port: Port for stabilizer server (used only when no client is
+                injected)
             logger: Optional logger instance
+            client: Optional injected SkyAnchorClient (GRASP Step 7, LC-3;
+                the composition root passes one explicitly).  If None
+                (default), a SkyAnchorClient(host, port) is created exactly
+                as before.
         """
         self.__logger = logger or get_logger(
             "stabilizer_manager",
@@ -45,7 +52,7 @@ class StabilizerManager:
             log_level=controller_config.LOG_LEVEL
         )
         self.__stabilizer_path = stabilizer_path
-        self.__client = SkyAnchorClient(host, port)
+        self.__client = client if client is not None else SkyAnchorClient(host, port)
 
         self.__process_started = False
         self.__should_connect = False
@@ -58,6 +65,9 @@ class StabilizerManager:
         # Timestamp of the last reading handed out by poll_new().  Starts at
         # 0 exactly like the controller's former __last_xy_update field.
         self.__last_consumed_timestamp = 0
+
+        # Version-skew tripwire latch (Step 7 carried bullet), see poll_new().
+        self.__skew_warned = False
 
     def start_stabilizer_process(self) -> None:
         """Start the sky anchor stabilizer process and connection thread."""
@@ -110,18 +120,6 @@ class StabilizerManager:
 
         self.__logger.info("Stabilizer connection thread terminated")
 
-    def attempt_connection(self) -> bool:
-        """
-        Attempt to connect to stabilizer if needed.
-
-        Deprecated: Connection now happens automatically in background thread.
-        This method is kept for backward compatibility.
-
-        Returns:
-            True if connected, False otherwise
-        """
-        return self.__connected
-
     def poll_new(self) -> Optional[StabilizerReading]:
         """
         Return the latest stabilizer reading if it has not been consumed yet.
@@ -142,6 +140,25 @@ class StabilizerManager:
 
         if reading is None:
             return None
+
+        # Version-skew tripwire (Step 7 carried bullet): a navigation frame
+        # from a producer that predates the explicit ``navigation`` flag
+        # (GRASP Step 4) still carries the historic matches_percent
+        # placeholder (101.0) but parses with navigation=False -- meaning
+        # navigation frames would silently be treated as stabilization
+        # frames.  Warn once per process, never drop the reading.
+        if (not self.__skew_warned
+                and reading.matches_percent > 100
+                and not reading.navigation):
+            self.__skew_warned = True
+            self.__logger.warning(
+                "Stabilizer payload skew: matches_percent="
+                f"{reading.matches_percent} arrived with navigation=False -- "
+                "the sky_anchor producer likely predates the explicit "
+                "navigation flag; navigation frames will be treated as "
+                "stabilization frames"
+            )
+
         if reading.timestamp == self.__last_consumed_timestamp:
             return None
 

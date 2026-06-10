@@ -20,9 +20,16 @@ must reflect the CLIENT's health -- a dead receive thread
 of reporting "connected" forever.  The drop is one-way (no hidden
 reconnect; reconnecting remains the connection thread's job).
 
-StabilizerManager still constructs its own SkyAnchorClient (LC-3 is a
-Step 7 concern), so the class is patched in the module namespace and the
-connected flag is set through the name-mangled attribute.
+Step 7 (LC-3): the SkyAnchorClient is constructor-injected, so the tests
+hand in a plain mock; the connected flag is still set through the
+name-mangled attribute (it is normally flipped by the background connect
+thread, which the tests never start).
+
+Step 7 carried bullet (version-skew tripwire): a reading whose
+matches_percent exceeds 100 while navigation is False means the producer
+predates the explicit navigation flag (the historic 101.0 placeholder
+without its Step 4 companion field) -- poll_new() warns ONCE per manager
+and never drops the reading.
 """
 
 from unittest import mock
@@ -35,25 +42,26 @@ from src.stabilizer_manager import StabilizerManager
 pytestmark = [pytest.mark.unit]
 
 
-def make_reading(timestamp, navigation=False):
+def make_reading(timestamp, navigation=False, matches_percent=90.0):
     return StabilizerReading(
-        dx=1.0, dy=2.0, angle_deg=0.0, matches_percent=90.0,
+        dx=1.0, dy=2.0, angle_deg=0.0, matches_percent=matches_percent,
         timestamp=timestamp, navigation=navigation,
     )
 
 
 @pytest.fixture
 def manager_and_client():
-    with mock.patch("src.stabilizer_manager.SkyAnchorClient") as client_cls:
-        manager = StabilizerManager(
-            stabilizer_path="unused/sky_anchor/main.py", logger=mock.Mock()
-        )
-    client = client_cls.return_value
+    client = mock.Mock()
     client.tick.return_value = None
     # Healthy receive thread unless a test says otherwise (Step 5 re-sync).
     client.is_connected.return_value = True
+    manager = StabilizerManager(
+        stabilizer_path="unused/sky_anchor/main.py",
+        logger=mock.Mock(),
+        client=client,
+    )
     # Connection state is normally flipped by the background connect thread;
-    # set it directly until Step 7 makes the client injectable.
+    # set it directly (the tests never spawn the thread).
     manager._StabilizerManager__connected = True
     return manager, client
 
@@ -100,6 +108,78 @@ class TestPollNew:
         manager, client = manager_and_client
         client.tick.side_effect = RuntimeError("socket exploded")
         assert manager.poll_new() is None
+
+
+class TestVersionSkewTripwire:
+    """Step 7 carried bullet: matches_percent > 100 with navigation=False
+    is an old-producer navigation frame; warn once, never drop data."""
+
+    def _skew_warnings(self, manager):
+        logger = manager._StabilizerManager__logger
+        return [
+            call for call in logger.warning.call_args_list
+            if "skew" in call.args[0]
+        ]
+
+    def test_skewed_reading_warns_once_and_is_still_handed_out(
+        self, manager_and_client
+    ):
+        manager, client = manager_and_client
+        skewed = make_reading(
+            timestamp=10.0, matches_percent=101.0, navigation=False
+        )
+        client.tick.return_value = skewed
+        assert manager.poll_new() is skewed
+        warnings = self._skew_warnings(manager)
+        assert len(warnings) == 1
+        assert "navigation=False" in warnings[0].args[0]
+
+    def test_warns_once_not_per_reading(self, manager_and_client):
+        manager, client = manager_and_client
+        for step in range(3):
+            client.tick.return_value = make_reading(
+                timestamp=10.0 + step, matches_percent=101.0,
+                navigation=False,
+            )
+            manager.poll_new()
+        assert len(self._skew_warnings(manager)) == 1
+
+    def test_repeat_polls_of_the_same_reading_do_not_spam(
+        self, manager_and_client
+    ):
+        manager, client = manager_and_client
+        client.tick.return_value = make_reading(
+            timestamp=10.0, matches_percent=101.0, navigation=False
+        )
+        manager.poll_new()
+        # Same reading still latest -> de-duplicated to None, no new warning.
+        assert manager.poll_new() is None
+        assert len(self._skew_warnings(manager)) == 1
+
+    def test_navigation_placeholder_with_flag_is_not_skew(
+        self, manager_and_client
+    ):
+        """A current producer emits 101.0 WITH navigation=True -- fine."""
+        manager, client = manager_and_client
+        client.tick.return_value = make_reading(
+            timestamp=10.0, matches_percent=101.0, navigation=True
+        )
+        manager.poll_new()
+        assert self._skew_warnings(manager) == []
+
+    @pytest.mark.parametrize("matches_percent", [0.0, 90.0, 100.0])
+    def test_normal_confidence_never_warns(
+        self, manager_and_client, matches_percent
+    ):
+        """Strictly > 100: the legitimate 0-100 range (including exactly
+        100) stays silent."""
+        manager, client = manager_and_client
+        client.tick.return_value = make_reading(
+            timestamp=10.0, matches_percent=matches_percent,
+            navigation=False,
+        )
+        manager.poll_new()
+        assert self._skew_warnings(manager) == []
 
 
 class TestClientHealthResync:
